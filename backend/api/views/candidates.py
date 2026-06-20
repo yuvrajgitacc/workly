@@ -4,6 +4,7 @@ import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q, F
+from django.utils import timezone
 
 from api.models import Company, Session, Candidate, JobApplication, Notification
 from api.decorators import require_api_key
@@ -253,34 +254,80 @@ def candidate_action(request, session_id, cand_id):
             app = JobApplication.objects.filter(candidate=candidate).select_related('seeker').first()
             if app and app.seeker:
                 seeker = app.seeker
-                status_map = {
-                    'hired': 'hired',
-                    'rejected': 'rejected',
-                    'forwarded': 'shortlisted',
-                }
-                notify_status = status_map.get(action)
-                if notify_status:
-                    # Update application status
-                    app.status = notify_status
-                    app.save(update_fields=['status'])
+                
+                # Check if notification should be delayed
+                completed_round_order = candidate.current_round_index
+                if action == "forward":
+                    completed_round_order = candidate.current_round_index - 1
+                
+                # Safe int conversion helper
+                def _safe_int(val, default=1):
+                    if val is None:
+                        return default
+                    try:
+                        return int(val)
+                    except (ValueError, TypeError):
+                        return default
 
-                    # Create in-app notification
-                    Notification.objects.create(
-                        seeker=seeker,
-                        type='status_updated',
-                        title=f'Application Update — {session.job_title}',
-                        message=f'Your application at {session.name} has been updated to: {notify_status.title()}.',
-                        link='/jobs/dashboard/applications',
-                    )
+                completed_round = None
+                for r in (session.rounds or []):
+                    if _safe_int(r.get("order")) == _safe_int(completed_round_order):
+                        completed_round = r
+                        break
+                
+                r_date_str = completed_round.get("result_announcement_date") if completed_round else None
+                r_date = None
+                if r_date_str:
+                    from django.utils.dateparse import parse_datetime
+                    from datetime import datetime
+                    if isinstance(r_date_str, datetime):
+                        if timezone.is_naive(r_date_str):
+                            try:
+                                r_date = timezone.make_aware(r_date_str, timezone.get_current_timezone())
+                            except Exception:
+                                r_date = None
+                        else:
+                            r_date = r_date_str
+                    elif isinstance(r_date_str, str):
+                        try:
+                            r_date = parse_datetime(r_date_str)
+                            if r_date and timezone.is_naive(r_date):
+                                r_date = timezone.make_aware(r_date, timezone.get_current_timezone())
+                        except Exception:
+                            r_date = None
+                
+                is_delayed = r_date and timezone.now() < r_date
+                
+                if not is_delayed:
+                    status_map = {
+                        'hired': 'hired',
+                        'rejected': 'rejected',
+                        'forwarded': 'shortlisted',
+                    }
+                    notify_status = status_map.get(action) or status_map.get(candidate.status)
+                    if notify_status:
+                        # Update application status
+                        app.status = notify_status
+                        app.last_notified_round_index = completed_round_order
+                        app.save(update_fields=['status', 'last_notified_round_index'])
 
-                    # Send email (non-blocking)
-                    send_status_update_to_seeker(
-                        seeker_email=seeker.email,
-                        seeker_name=seeker.full_name,
-                        job_title=session.job_title,
-                        company_name=session.name,
-                        new_status=notify_status,
-                    )
+                        # Create in-app notification
+                        Notification.objects.create(
+                            seeker=seeker,
+                            type='status_updated',
+                            title=f'Application Update — {session.job_title}',
+                            message=f'Your application at {session.company.name if session.company else "Unknown Company"} has been updated to: {notify_status.title()}.',
+                            link='/applications',
+                        )
+
+                        # Send email (non-blocking)
+                        send_status_update_to_seeker(
+                            seeker_email=seeker.email,
+                            seeker_name=seeker.full_name,
+                            job_title=session.job_title,
+                            company_name=session.company.name if session.company else "Unknown Company",
+                            new_status=notify_status,
+                        )
         except Exception as notify_err:
             logger.warning('Notification error for candidate action: %s', notify_err)
         # ─────────────────────────────────────────────────────────────────────

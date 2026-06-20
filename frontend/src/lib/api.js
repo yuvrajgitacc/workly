@@ -63,7 +63,8 @@ export const authAPI = {
   generateKey: (b) => req("POST","/auth/api-keys/generate",b),
   getKeys: () => req("GET","/auth/api-keys"),
   deleteKey: (id) => req("DELETE",`/auth/api-keys/${id}`),
-  getMe: () => req("GET","/auth/me")
+  getMe: () => req("GET","/auth/me"),
+  updateProfile: (b) => req("POST","/auth/update-profile",b)
 }
 
 // SESSIONS
@@ -247,6 +248,7 @@ export const seekerAPI = {
     fd.append('file', file);
     return seekerReq('POST', '/api/v1/seeker/resume/upload', fd, true);
   },
+  getParseStatus: () => seekerReq('GET', '/api/v1/seeker/resume/parse-status'),
   enhanceResume: (jobDescription = '') =>
     seekerReq('POST', '/api/v1/seeker/resume/enhance', { job_description: jobDescription }),
 
@@ -258,6 +260,15 @@ export const seekerAPI = {
   getJob: (id) => seekerReq('GET', `/api/v1/seeker/jobs/${id}`),
   applyJob: (id, coverNote = '') =>
     seekerReq('POST', `/api/v1/seeker/jobs/${id}/apply`, { cover_note: coverNote }),
+  
+  // Saved Jobs / Bookmarks
+  saveJob: (id, save = true) => seekerReq(save ? 'POST' : 'DELETE', `/api/v1/seeker/jobs/${id}/save`),
+  getSavedJobs: () => seekerReq('GET', '/api/v1/seeker/jobs/saved'),
+
+  // Companies
+  listCompanies: () => seekerReq('GET', '/api/v1/seeker/companies'),
+  getCompany: (id) => seekerReq('GET', `/api/v1/seeker/companies/${id}`),
+  followCompany: (id, follow = true) => seekerReq(follow ? 'POST' : 'DELETE', `/api/v1/seeker/companies/${id}/follow`),
 
   // Applications
   getApplications: () => seekerReq('GET', '/api/v1/seeker/applications'),
@@ -266,6 +277,43 @@ export const seekerAPI = {
   getNotifications: () => seekerReq('GET', '/api/v1/seeker/notifications'),
   markRead: (id) => seekerReq('PATCH', `/api/v1/seeker/notifications/${id}/read`),
   markAllRead: () => seekerReq('POST', '/api/v1/seeker/notifications/read-all'),
+};
+
+// ── PUBLIC API (no auth required) ──────────────────────────────────────────────
+// For browsing jobs/companies without logging in
+
+async function publicReq(method, path) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  const res = await fetch(`http://127.0.0.1:8000${path}`, opts);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Request failed');
+  return data.data;
+}
+
+export const publicAPI = {
+  listCompanies: () => publicReq('GET', '/api/v1/public/companies'),
+  getCompany: (id) => publicReq('GET', `/api/v1/public/companies/${id}`),
+  listJobs: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return publicReq('GET', `/api/v1/public/jobs${qs ? '?' + qs : ''}`);
+  },
+  getJob: (id) => publicReq('GET', `/api/v1/public/jobs/${id}`),
+  parseResume: (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch("http://127.0.0.1:8000/api/v1/public/parse-resume", {
+      method: "POST",
+      body: fd,
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) throw new Error(data.error || "Failed to parse resume");
+        return data.data;
+      });
+  },
 };
 
 

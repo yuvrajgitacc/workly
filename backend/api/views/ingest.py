@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from google_auth_oauthlib.flow import Flow
+import logging
 
 from api.models import Session, IngestJob, Candidate
 from api.decorators import require_api_key, check_rate_limit
@@ -17,6 +18,18 @@ from workers.celery_worker import process_resume_batch, sync_gmail_resumes, sync
 from agents.normalization_agent import SkillNormalizationAgent
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+
+logger = logging.getLogger(__name__)
+
+def _run_task_safe(task, *args, **kwargs):
+    try:
+        task.delay(*args, **kwargs)
+    except Exception as e:
+        logger.warning("Celery dispatch failed for task %s, running synchronously: %s", getattr(task, '__name__', str(task)), e)
+        try:
+            task.apply(args=args, kwargs=kwargs)
+        except Exception as inner_err:
+            logger.error("Synchronous task execution failed: %s", inner_err)
 
 TIER_FILE_LIMITS = {
     "free":       {"per_batch": 50,  "zip_files": 50,   "llm_enrichment": True},
@@ -84,7 +97,7 @@ def upload_resumes(request):
             failed_files=0
         )
 
-        process_resume_batch.delay(str(job.id), saved_paths, session_id, "upload", use_llm)
+        _run_task_safe(process_resume_batch, str(job.id), saved_paths, session_id, "upload", use_llm)
 
         return JsonResponse(success_response({
             "job_id": str(job.id),
@@ -145,7 +158,7 @@ def upload_zip(request):
             failed_files=0
         )
 
-        process_resume_batch.delay(str(job.id), extracted, session_id, "upload", use_llm)
+        _run_task_safe(process_resume_batch, str(job.id), extracted, session_id, "upload", use_llm)
 
         return JsonResponse(success_response({
             "job_id": str(job.id),
@@ -235,7 +248,7 @@ def gmail_sync(request):
 
         job = IngestJob.objects.create(session=session, type="gmail", status="pending")
 
-        sync_gmail_resumes.delay(session_id, str(job.id))
+        _run_task_safe(sync_gmail_resumes, session_id, str(job.id))
         return JsonResponse(success_response({"job_id": str(job.id), "status": "pending"}))
     except Exception as e:
         return JsonResponse(error_response(f"Server error: {str(e)}"), status=500)
@@ -289,7 +302,7 @@ def gdrive_sync(request):
 
         job = IngestJob.objects.create(session=session, type="gdrive", status="pending")
 
-        sync_gdrive_resumes.delay(session_id, str(job.id))
+        _run_task_safe(sync_gdrive_resumes, session_id, str(job.id))
         return JsonResponse(success_response({"job_id": str(job.id), "status": "pending"}))
     except Exception as e:
         return JsonResponse(error_response(f"Server error: {str(e)}"), status=500)

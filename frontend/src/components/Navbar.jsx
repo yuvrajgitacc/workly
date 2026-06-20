@@ -30,18 +30,29 @@ const Navbar = ({ onSignIn, isLoggedIn }) => {
       animate={{ y: 0 }}
       transition={{ duration: 0.8, ease: [0.21, 0.45, 0.32, 0.9] }}
     >
-      <Link to="/" className="nav-left flex items-center cursor-pointer no-underline text-inherit">
+      <Link to="/admin" className="nav-left flex items-center cursor-pointer no-underline text-inherit">
         <Logo />
         <span className="logo-text ml-2">Vishleshan</span>
       </Link>
 
       <div className="nav-center">
-        {['Product', 'Features', 'Pricing', 'Jobs', 'Developers'].map((item) => {
+        {['Product', 'Features', 'Pricing', 'Jobs', 'Sessions', 'Developers'].map((item) => {
+          if (item === 'Sessions') {
+            return (
+              <Link 
+                key={item}
+                to="/admin/dashboard/sessions" 
+                className="nav-link font-semibold transition-all hover:translate-y-[-2px]"
+              >
+                Sessions
+              </Link>
+            );
+          }
           if (item === 'Jobs') {
             return (
               <Link 
                 key={item}
-                to="/jobs" 
+                to="/admin/jobs/post" 
                 className="nav-link font-semibold transition-all hover:translate-y-[-2px]"
               >
                 Jobs
@@ -62,7 +73,7 @@ const Navbar = ({ onSignIn, isLoggedIn }) => {
           return (
             <motion.a 
               key={item}
-              href={`/#${item.toLowerCase()}`} 
+              href={`/admin#${item.toLowerCase()}`} 
               className="nav-link"
               whileHover={{ y: -2 }}
               transition={{ type: "spring", stiffness: 400 }}

@@ -17,9 +17,6 @@ import SettingsPage from './pages/SettingsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import FraudDetectionPage from './pages/FraudDetectionPage';
 
-import JobsLandingPage from './pages/JobsLandingPage';
-import JobsSearchPage from './pages/JobsSearchPage';
-import JobDetailsPage from './pages/JobDetailsPage';
 import JobsTrendsPage from './pages/JobsTrendsPage';
 import JobSeekerSafetyPage from './pages/JobSeekerSafetyPage';
 
@@ -40,9 +37,18 @@ import DeveloperSettings from './pages/developer/DeveloperSettings';
 // Job Seeker Portal imports
 import JobSeekerLoginPage from './pages/seeker/JobSeekerLoginPage';
 import JobSeekerRegisterPage from './pages/seeker/JobSeekerRegisterPage';
-import MyResumePage from './pages/seeker/MyResumePage';
-import MyApplicationsPage from './pages/seeker/MyApplicationsPage';
-import NotificationsPage from './pages/seeker/NotificationsPage';
+
+// New Workly-style Job Seeker Portal Pages
+import UserHome from './pages/user/UserHome';
+import UserJobs from './pages/user/UserJobs';
+import UserJobDetail from './pages/user/UserJobDetail';
+import UserCompanies from './pages/user/UserCompanies';
+import UserCompanyDetail from './pages/user/UserCompanyDetail';
+import UserProfile from './pages/user/UserProfile';
+import UserDashboard from './pages/user/UserDashboard';
+import UserUploadResume from './pages/user/UserUploadResume';
+import UserApply from './pages/user/UserApply';
+import UserApplications from './pages/user/UserApplications';
 
 function ScrollToTop() {
   const location = useLocation();
@@ -118,25 +124,45 @@ export default function App() {
       <Router>
         <ScrollToTop />
         <Routes>
-           {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/auth/verify" element={<AuthVerifyPage />} />
+           {/* Seeker Portal Routes (Workly-style) */}
+          <Route path="/" element={<UserHome />} />
+          <Route path="/jobs" element={<UserJobs />} />
+          <Route path="/jobs/:jobId" element={<UserJobDetail />} />
+          <Route path="/companies" element={<UserCompanies />} />
+          <Route path="/companies/:companyId" element={<UserCompanyDetail />} />
+          <Route path="/profile" element={<UserProfile />} />
+          <Route path="/dashboard" element={<UserDashboard />} />
+          <Route path="/upload-resume" element={<UserUploadResume />} />
+          <Route path="/apply/:jobId" element={<UserApply />} />
+          <Route path="/applications" element={<UserApplications />} />
 
-          {/* Job Seeker Routes */}
-          <Route path="/jobs" element={<JobsLandingPage />} />
-          <Route path="/jobs/search" element={<JobsSearchPage />} />
-          <Route path="/jobs/safety-checker" element={<JobSeekerSafetyPage />} />
-          <Route path="/jobs/trends" element={<JobsTrendsPage />} />
-          <Route path="/jobs/applications" element={<MyApplicationsPage />} />
-          <Route path="/jobs/resume" element={<MyResumePage />} />
-          <Route path="/jobs/notifications" element={<NotificationsPage />} />
-          <Route path="/jobs/:id" element={<JobDetailsPage />} />
+          {/* Additional Seeker Pages (wrapped or trends) */}
+          <Route path="/market-trends" element={<JobsTrendsPage />} />
+          <Route path="/hiring-safety" element={<JobSeekerSafetyPage />} />
 
           {/* Job Seeker Portal — Auth */}
           <Route path="/jobs/login"    element={<JobSeekerLoginPage />} />
           <Route path="/jobs/register" element={<JobSeekerRegisterPage />} />
+          <Route path="/auth/register" element={<JobSeekerRegisterPage />} />
+          <Route path="/auth/login"    element={<Navigate to="/jobs/login" replace />} />
+
+          {/* Recruiter / Company Public Routes (all under /admin/*) */}
+          <Route path="/admin" element={<LandingPage />} />
+          <Route path="/admin/login" element={<LoginPage />} />
+          <Route path="/admin/register" element={<RegisterPage />} />
+          <Route path="/admin/auth/verify" element={<AuthVerifyPage />} />
+
+          {/* Recruiter / Company Sidebar/Portal Redirects */}
+          <Route path="/admin/pricing" element={<Navigate to="/admin" replace />} />
+          <Route path="/admin/features" element={<Navigate to="/admin" replace />} />
+          <Route path="/admin/developers" element={<Navigate to="/developer" replace />} />
+          <Route path="/admin/jobs/post" element={<Navigate to="/admin/dashboard/sessions/new" replace />} />
+          <Route path="/admin/applications" element={<Navigate to="/admin/dashboard/sessions" replace />} />
+
+          {/* Backward-compat redirects for old routes */}
+          <Route path="/login" element={<Navigate to="/admin/login" replace />} />
+          <Route path="/register" element={<Navigate to="/admin/register" replace />} />
+          <Route path="/auth/verify" element={<Navigate to="/admin/auth/verify" replace />} />
 
           {/* Developer Portal Routes */}
           <Route path="/developer" element={<DeveloperLandingPage />} />
@@ -157,8 +183,8 @@ export default function App() {
             <Route path="settings" element={<DeveloperSettings />} />
           </Route>
 
-          {/* Protected Dashboard Routes */}
-          <Route path="/dashboard" element={
+          {/* Protected Recruiter Dashboard Routes (moved to /admin/dashboard) */}
+          <Route path="/admin/dashboard" element={
             <ProtectedRoute>
               <DashboardLayout />
             </ProtectedRoute>

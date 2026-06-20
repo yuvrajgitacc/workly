@@ -114,7 +114,7 @@ const AuthPage = () => {
   useEffect(() => {
     const jwt = localStorage.getItem("vish_jwt");
     if (jwt) {
-      navigate('/dashboard', { replace: true });
+      navigate('/admin/dashboard', { replace: true });
     }
   }, [navigate]);
 
@@ -136,7 +136,7 @@ const AuthPage = () => {
         const data = await authAPI.login(email, password);
         setAuth(data);
         toast.success("Welcome back!");
-        navigate('/dashboard');
+        navigate('/admin/dashboard');
       } else {
         await authAPI.register({ email, password, name: fullName });
         toast.success("Account created! Please sign in.");
@@ -217,12 +217,24 @@ const AuthPage = () => {
 
         <div className="auth-footer" style={{ transform: "translateZ(10px)" }}>
           {isLogin ? "New to Vishleshan?" : "Have an account?"}
-          <button className="auth-toggle-link" onClick={() => setIsLogin(!isLogin)}>{isLogin ? 'Sign Up' : 'Sign In'}</button>
+          <button 
+            type="button"
+            className="auth-toggle-link" 
+            onClick={() => {
+              if (isLogin) {
+                navigate('/admin/register');
+              } else {
+                setIsLogin(true);
+              }
+            }}
+          >
+            {isLogin ? 'Sign Up' : 'Sign In'}
+          </button>
         </div>
 
-        <button onClick={() => navigate('/')} className="back-btn" style={{ background: 'none', border: 'none', width: '100%', marginTop: '10px', color: '#a1a1a1', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <button onClick={() => navigate('/admin')} className="back-btn" style={{ background: 'none', border: 'none', width: '100%', marginTop: '10px', color: '#a1a1a1', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-          Return to home
+          Return to Recruiter Home
         </button>
       </motion.div>
     </div>

@@ -10,6 +10,14 @@ class Company(models.Model):
     tier = models.CharField(max_length=50, default="free")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
+    industry = models.CharField(max_length=255, null=True, blank=True)
+    hq_location = models.CharField(max_length=255, null=True, blank=True)
+    company_size = models.CharField(max_length=50, null=True, blank=True)
+    founded_year = models.IntegerField(null=True, blank=True)
+    website_url = models.CharField(max_length=500, null=True, blank=True)
+    about = models.TextField(null=True, blank=True)
+    logo_path = models.CharField(max_length=500, null=True, blank=True)
+    slug = models.CharField(max_length=255, null=True, blank=True, unique=True)
 
     class Meta:
         db_table = "companies"
@@ -45,6 +53,10 @@ class Session(models.Model):
     gmail_address = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    location = models.CharField(max_length=255, null=True, blank=True, default="Remote")
+    employment_type = models.CharField(max_length=50, default="Full-time")
+    salary_range = models.CharField(max_length=100, default="Competitive")
+    experience_level = models.CharField(max_length=50, default="Mid-Level")
 
     class Meta:
         db_table = "sessions"
@@ -67,6 +79,9 @@ class Candidate(models.Model):
     current_round_index = models.IntegerField(default=0)
     status = models.CharField(max_length=50, default="new")
     source = models.CharField(max_length=50, default="upload")
+    application_source = models.CharField(max_length=50, default="manual")
+    agent_processing_status = models.CharField(max_length=50, default="completed")
+    agent_error_message = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -257,6 +272,7 @@ class JobSeekerAccount(models.Model):
     is_active         = models.BooleanField(default=True)
     created_at        = models.DateTimeField(default=timezone.now)
     updated_at        = models.DateTimeField(auto_now=True)
+    followed_companies = models.JSONField(default=list)
 
     class Meta:
         db_table = "job_seeker_accounts"
@@ -279,6 +295,7 @@ class JobApplication(models.Model):
     candidate   = models.ForeignKey(Candidate, on_delete=models.SET_NULL, null=True, blank=True, db_column="candidate_id", related_name="seeker_application")
     cover_note  = models.TextField(null=True, blank=True)
     status      = models.CharField(max_length=50, choices=STATUS_CHOICES, default="applied")
+    last_notified_round_index = models.IntegerField(null=True, blank=True)
     applied_at  = models.DateTimeField(default=timezone.now)
     updated_at  = models.DateTimeField(auto_now=True)
 
@@ -315,3 +332,17 @@ class Notification(models.Model):
     def __str__(self):
         target = self.seeker or self.company
         return f"[{self.type}] → {target}: {self.title}"
+
+
+class SavedJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    seeker = models.ForeignKey(JobSeekerAccount, on_delete=models.CASCADE, db_column="seeker_id", related_name="saved_jobs")
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, db_column="session_id", related_name="saved_by")
+    saved_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "saved_jobs"
+        unique_together = (("seeker", "session"),)
+
+    def __str__(self):
+        return f"{self.seeker.full_name} bookmarked {self.session.job_title}"

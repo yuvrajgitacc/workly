@@ -1,13 +1,23 @@
 import React from 'react';
+import { useAuthStore } from '../stores/authStore';
 
 export default function PremiumBadge({ tooltip = 'Available on Premium plan', children }) {
+  const { tier } = useAuthStore();
+  
+  // If the user's company is on a Business or Enterprise plan, unlock and render content without the lock overlay
+  const isUnlocked = tier && (tier.toLowerCase() === 'business' || tier.toLowerCase() === 'enterprise' || tier.toLowerCase() === 'premium');
+
+  if (isUnlocked) {
+    return <>{children}</>;
+  }
+
   return (
-    <div className="premium-lock-wrapper" style={{ position: 'relative', display: 'inline-block' }}>
+    <div className="premium-lock-wrapper" style={{ position: 'relative', display: 'inline-block', width: '100%', height: '100%' }}>
       <div className="premium-lock-overlay" style={{
         position: 'absolute', inset: 0, zIndex: 10,
-        background: 'rgba(255,255,255,0.55)',
+        background: 'rgba(255,255,255,0.65)',
         backdropFilter: 'blur(2px)',
-        borderRadius: '12px',
+        borderRadius: '24px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -34,9 +44,10 @@ export default function PremiumBadge({ tooltip = 'Available on Premium plan', ch
           {tooltip}
         </p>
       </div>
-      <div style={{ opacity: 0.3, pointerEvents: 'none', userSelect: 'none' }}>
+      <div style={{ opacity: 0.3, pointerEvents: 'none', userSelect: 'none', height: '100%' }}>
         {children}
       </div>
     </div>
   );
 }
+

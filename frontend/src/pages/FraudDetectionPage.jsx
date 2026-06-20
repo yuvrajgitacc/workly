@@ -4,22 +4,21 @@ import { toast } from 'react-hot-toast';
 import { protectionAPI } from '../lib/api';
 import { 
   Shield, 
+  ScanSearch, 
   AlertTriangle, 
-  CheckCircle, 
+  CheckCircle2, 
   AlertCircle,
-  FileCheck, 
+  FileText, 
+  Upload, 
+  Link2, 
   Eye, 
   Heart, 
   Briefcase, 
-  Search, 
-  Upload, 
-  ChevronRight, 
-  FileText, 
   Terminal, 
+  Sparkles, 
+  MoreHorizontal,
   RefreshCw,
-  HelpCircle,
-  Sparkles,
-  Link as LinkIcon
+  Search
 } from 'lucide-react';
 
 export default function FraudDetectionPage() {
@@ -100,7 +99,7 @@ export default function FraudDetectionPage() {
       }
     })();
 
-    // Run animation steps in parallel
+    // Run animation steps
     let currentIdx = 0;
     const interval = setInterval(() => {
       currentIdx++;
@@ -112,17 +111,15 @@ export default function FraudDetectionPage() {
     }, 1200);
 
     try {
-      // Wait for both the minimum animations and backend API response
       const [result] = await Promise.all([
         apiPromise,
-        new Promise(resolve => setTimeout(resolve, 4500)) // ensure steps have time to render
+        new Promise(resolve => setTimeout(resolve, 4500))
       ]);
       
       clearInterval(interval);
       setScannedResult(result);
       setScanStep("result");
       
-      // Add result to history list
       setHistoryList(prev => [result, ...prev]);
       setActiveReport(result);
       toast.success("Verification scan completed!");
@@ -143,7 +140,7 @@ export default function FraudDetectionPage() {
     setJobLocationInput("Remote");
   };
 
-  // Derive reports & values
+  // Default fallback data when no logs are present
   const defaultReport = {
     candidate_name: "Sample Candidate",
     role: "Fullstack Developer",
@@ -164,20 +161,14 @@ export default function FraudDetectionPage() {
     metadata_verified: report.originality_score > 60
   };
 
-  const circleOffset = 427 - (report.originality_score / 100) * 427;
+  const circleOffset = 264 - (report.originality_score / 100) * 264;
 
   const getRatingText = (score) => {
-    if (score >= 80) return { label: "Excellent", color: "text-[#22C55E]" };
-    if (score >= 60) return { label: "Moderate Risk", color: "text-[#2563EB]" };
-    return { label: "High Danger", color: "text-red-500" };
+    if (score >= 80) return { label: "EXCELLENT", color: "text-[color:var(--success)]" };
+    if (score >= 60) return { label: "MODERATE RISK", color: "text-[color:var(--warning)]" };
+    return { label: "HIGH DANGER", color: "text-[color:var(--danger)]" };
   };
   const rating = getRatingText(report.originality_score);
-
-  const getStrokeColor = (score) => {
-    if (score >= 80) return "#22C55E";
-    if (score >= 60) return "#2563EB";
-    return "#EF4444";
-  };
 
   // Dynamically compute metrics
   const totalScans = historyList.length;
@@ -188,7 +179,7 @@ export default function FraudDetectionPage() {
   // Dynamic alerts
   const getDynamicAlerts = () => {
     const list = [];
-    historyList.slice(0, 4).forEach((item, idx) => {
+    historyList.slice(0, 3).forEach((item, idx) => {
       const isJob = item.role === "Job Posting";
       const name = isJob ? item.candidate_name.replace("Job: ", "") : item.candidate_name;
       
@@ -198,10 +189,10 @@ export default function FraudDetectionPage() {
           type: "critical",
           title: isJob ? "Suspicious Job Posting" : "High Similarity Match",
           desc: isJob 
-            ? `Risk detected in job posting for "${name}". Similarity to cloned scams.`
+            ? `Risk detected in job posting for "${name}".`
             : `High similarity (${item.plagiarism_score}%) detected in "${name}"'s portfolio.`,
           time: new Date(item.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          color: "border-red-200 bg-red-50/50 text-red-700"
+          color: "border-[color:var(--danger)]/30 bg-[color:var(--danger)]/5 text-[color:var(--danger)]"
         });
       } else if (item.ai_probability > 45) {
         list.push({
@@ -209,10 +200,10 @@ export default function FraudDetectionPage() {
           type: "warning",
           title: "AI Generation Detected",
           desc: isJob
-            ? `Job description for "${name}" contains high AI-generated signature.`
-            : `Candidate "${name}"'s resume contains high AI probability (${item.ai_probability}%).`,
+            ? `Job description for "${name}" contains high AI signature.`
+            : `Candidate "${name}" resume contains high AI probability (${item.ai_probability}%).`,
           time: new Date(item.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          color: "border-amber-200 bg-amber-50/50 text-amber-700"
+          color: "border-[color:var(--warning)]/30 bg-[color:var(--warning)]/5 text-[color:var(--warning)]"
         });
       } else {
         list.push({
@@ -220,10 +211,10 @@ export default function FraudDetectionPage() {
           type: "success",
           title: isJob ? "Job Posting Safe" : "Portfolio Protected",
           desc: isJob
-            ? `Job posting for "${name}" verified safe & original.`
+            ? `Job posting for "${name}" verified safe.`
             : `Candidate "${name}" portfolio verified original with ${item.originality_score}% score.`,
           time: new Date(item.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          color: "border-emerald-200 bg-emerald-50/50 text-emerald-700"
+          color: "border-[color:var(--success)]/30 bg-[color:var(--success)]/5 text-[color:var(--success)]"
         });
       }
     });
@@ -233,10 +224,10 @@ export default function FraudDetectionPage() {
         {
           id: 1,
           type: "success",
-          title: "System Ready",
-          desc: "Upload portfolio resumes or enter job posting details to run advanced verification.",
+          title: "System ready",
+          desc: "Upload a resume or paste a job URL to begin verification.",
           time: "Now",
-          color: "border-emerald-200 bg-emerald-50/50 text-emerald-700"
+          color: "border-[color:var(--success)]/30 bg-[color:var(--success)]/5 text-[color:var(--success)]"
         }
       ];
     }
@@ -245,434 +236,420 @@ export default function FraudDetectionPage() {
 
   const alerts = getDynamicAlerts();
 
+  const stats = [
+    { label: "Total scans", value: totalScans.toString(), icon: FileText, tint: "bg-primary/10 text-primary" },
+    { label: "Signals checked", value: profileViewsChecked.toLocaleString(), icon: Eye, tint: "bg-[#ede7f6] text-[#673ab7]" },
+    { label: "Authentic", value: authenticSignals.toString(), icon: Heart, tint: "bg-[color:var(--success)]/10 text-[color:var(--success)]" },
+    { label: "Stopped alerts", value: fraudIntercepts.toString(), icon: Briefcase, tint: "bg-[color:var(--danger)]/10 text-[color:var(--danger)]" },
+  ];
+
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 text-[#2A2A2A] font-sans">
-      
-      {/* Upper header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-[#2A2A2A] flex items-center gap-2.5">
-            <Shield className="text-[#2563EB] w-8 h-8" />
-            <span>Fraud Detection System</span>
-          </h1>
-          <p className="text-sm text-[#5c5c5c] mt-1">
-            Analyze originality, detect AI-generated manipulation, and protect against credentials fabrication in real time.
-          </p>
+    <div className="space-y-4">
+      {/* Header — compact toolbar style */}
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <Shield size={18} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="font-display text-[20px] sm:text-[22px] font-bold text-foreground leading-tight truncate">
+              Fraud Detection System
+            </h1>
+            <p className="text-xs text-muted-foreground truncate">
+              Originality, AI-manipulation & credential checks in real time.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold bg-[#F0F6FF] text-[#2563EB] px-3.5 py-2 rounded-xl border border-[#BFDBFE] shadow-sm">
-          <Sparkles size={14} />
-          <span>Active OriginX Core Protection</span>
-        </div>
+        <button className="inline-flex items-center gap-2 h-9 px-4 rounded-full bg-primary/5 text-primary border border-primary/20 font-display text-[13px] font-medium hover:bg-primary/10 transition self-start sm:self-auto">
+          <Sparkles size={14} /> OriginX Core active
+        </button>
+      </header>
+
+      {/* Compact stats strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div
+              key={s.label}
+              className="bg-card border border-border rounded-xl px-3 py-2.5 flex items-center gap-3 hover:shadow-google-1 transition"
+            >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${s.tint} shrink-0`}>
+                <Icon size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground truncate">
+                  {s.label}
+                </div>
+                <div className="font-display text-[18px] font-bold text-foreground leading-tight">{s.value}</div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Main Grid: Dial, Authenticity Status, and 3D pedestal shield graphic */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Column: Dial & Checklist (Occupies 8 cols) */}
-        <div className="lg:col-span-8 bg-white border border-[#e6dfcd] p-8 rounded-3xl shadow-sm flex flex-col md:flex-row gap-8 items-center justify-between relative overflow-hidden">
-          
-          {/* Dial Card */}
-          <div className="flex flex-col items-center text-center space-y-4 md:border-r border-[#f5f4ef] md:pr-8 shrink-0 w-full md:w-auto">
-            <h3 className="font-extrabold text-[#2A2A2A] text-sm uppercase tracking-wider">AI Originality Score</h3>
-            
-            <div className="relative w-40 h-40 flex items-center justify-center">
-              <svg className="w-full h-full transform -rotate-90">
-                <circle cx="80" cy="80" r="68" stroke="#f5f4ef" strokeWidth="8" fill="transparent" />
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="68"
-                  stroke={getStrokeColor(report.originality_score)}
-                  strokeWidth="8"
-                  fill="transparent"
-                  strokeDasharray="427"
-                  strokeDashoffset={circleOffset}
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-3xl font-black text-[#2A2A2A]">{report.originality_score}%</span>
-                <span className={`text-[10px] uppercase tracking-wider font-extrabold ${rating.color} mt-0.5`}>
-                  {rating.label}
-                </span>
+      {/* Originality report row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2 bg-card border border-border rounded-xl p-4 hover:shadow-google-1 transition">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Originality report
+              </span>
+            </div>
+            <button className="w-7 h-7 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground">
+              <MoreHorizontal size={16} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-5 items-center">
+            {/* Gauge */}
+            <div className="flex sm:flex-col items-center gap-3 sm:gap-2 shrink-0">
+              <div className="relative w-24 h-24">
+                <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                  <circle cx="50" cy="50" r="42" stroke="oklch(0.96 0.003 247)" strokeWidth="8" fill="none" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    stroke={report.originality_score >= 70 ? "var(--success)" : "var(--danger)"}
+                    strokeWidth="8"
+                    fill="none"
+                    strokeDasharray="264"
+                    strokeDashoffset={circleOffset}
+                    strokeLinecap="round"
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="font-display text-[22px] font-bold text-foreground leading-none">{report.originality_score}%</div>
+                  <div className={`text-[9px] font-bold tracking-[0.16em] ${rating.color} mt-0.5`}>
+                    {rating.label}
+                  </div>
+                </div>
+              </div>
+              <div className={`inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full text-[11px] font-display font-medium ${
+                report.originality_score >= 70 ? 'bg-[color:var(--success)]/10 text-[color:var(--success)]' : 'bg-[color:var(--danger)]/10 text-[color:var(--danger)]'
+              }`}>
+                <CheckCircle2 size={12} /> {report.status}
               </div>
             </div>
 
-            <span className={`text-xs font-bold ${report.originality_score >= 70 ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'} px-3 py-1 rounded-full flex items-center gap-1`}>
-              {report.status}
-            </span>
-          </div>
-
-          {/* Checklist & Summary */}
-          <div className="flex-1 space-y-6 w-full">
+            {/* Checks */}
             <div>
-              <h3 className="text-xl font-black text-[#2A2A2A]">
+              <h2 className="font-display text-[15px] font-bold text-foreground">
                 {report.role === "Job Posting" 
-                  ? `Job Description for "${report.candidate_name.replace("Job: ", "")}"`
-                  : `Candidate "${report.candidate_name}" originality report`}
-              </h3>
-              <p className="text-xs text-[#5c5c5c] mt-1">
-                {report.role === "Job Posting" 
-                  ? "AI scanning evaluates safety, legitimacy, and text structure indicators:" 
-                  : "Our AI suite scans resumes and repository metadata to confirm authenticity:"}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { 
-                  label: report.role === "Job Posting" ? "Safe from template scams" : "No plagiarism detected", 
-                  desc: report.role === "Job Posting" ? "Original descriptions" : "No copy-paste resumes",
-                  valid: checks.no_plagiarism
-                },
-                { 
-                  label: "AI content is natural", 
-                  desc: `AI score: ${report.ai_probability}%`, 
-                  valid: checks.ai_looks_authentic
-                },
-                { 
-                  label: report.role === "Job Posting" ? "No phishing links detected" : "No AI keyword stuffing", 
-                  desc: report.role === "Job Posting" ? "Verified safe listing" : "Invisible text verified",
-                  valid: checks.no_ai_overuse
-                },
-                { 
-                  label: "Structure verified", 
-                  desc: "Metadata hashes verified", 
-                  valid: checks.metadata_verified
-                }
-              ].map((item, idx) => (
-                <div key={idx} className="flex items-start gap-2.5">
-                  {item.valid ? (
-                    <CheckCircle className="text-emerald-500 w-4 h-4 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertCircle className="text-amber-500 w-4 h-4 shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <h5 className="text-xs font-bold text-[#2A2A2A]">{item.label}</h5>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{item.desc}</p>
+                  ? `Job posting: ${report.candidate_name.replace("Job: ", "")}`
+                  : `${report.candidate_name} · originality check`}
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mt-3">
+                {[
+                  { title: report.role === "Job Posting" ? "Template safe" : "No plagiarism", desc: report.role === "Job Posting" ? "Original description" : `${report.plagiarism_score}% score`, valid: checks.no_plagiarism },
+                  { title: "AI content natural", desc: `AI score ${report.ai_probability}%`, valid: checks.ai_looks_authentic },
+                  { title: report.role === "Job Posting" ? "No phishing content" : "No keyword stuffing", desc: "Metadata checked", valid: checks.no_ai_overuse },
+                  { title: "Structure verified", desc: "Hashed layout", valid: checks.metadata_verified },
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <CheckCircle2 size={14} className={`${item.valid ? "text-[color:var(--success)]" : "text-[color:var(--warning)]"} mt-0.5 shrink-0`} />
+                    <div className="min-w-0">
+                      <div className="text-[13px] text-foreground font-medium leading-tight truncate">{item.title}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{item.desc}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-
-            {report.portfolios && report.portfolios.length > 0 && (
-              <div className="space-y-1.5">
-                <h5 className="text-[10px] uppercase font-bold tracking-wider text-gray-400">
-                  {report.role === "Job Posting" ? "Security Flags & Tags" : "Key Verified Assets"}
-                </h5>
-                <div className="flex flex-wrap gap-1.5">
-                  {report.portfolios.map((p, pIdx) => (
-                    <span key={pIdx} className="bg-[#f5f4ef] text-[#2A2A2A] text-[10px] px-2.5 py-1 rounded-lg font-semibold border border-[#e6dfcd]">
-                      {p}
+                ))}
+              </div>
+              {report.portfolios && report.portfolios.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {report.portfolios.map((c) => (
+                    <span
+                      key={c}
+                      className="inline-flex items-center h-6 px-2.5 rounded-full bg-muted text-foreground text-[11px] font-medium border border-border"
+                    >
+                      {c}
                     </span>
                   ))}
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* OriginX Suite Info */}
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3 hover:shadow-google-1 transition relative overflow-hidden">
+          <div className="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-primary/5" />
+          <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 relative">
+            <Shield size={22} />
+          </div>
+          <div className="min-w-0 relative">
+            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              OriginX Suite
+            </div>
+            <div className="font-display text-[14px] font-bold text-foreground leading-tight mt-0.5">
+              Channels protected
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+              Recruitment pipelines authenticated & verified. Multi-agent audit modules active.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Scanner + alerts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Scanner */}
+        <div className="lg:col-span-2 bg-card border border-border rounded-xl p-4 hover:shadow-google-1 transition flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                <Terminal size={14} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-display text-[15px] font-bold text-foreground leading-tight">
+                  Real-time security scanner
+                </h2>
+                <p className="text-[11px] text-muted-foreground">
+                  Choose a target to run AI safety audits.
+                </p>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Sleek 3D Pedestal Shield (Occupies 4 cols) */}
-        <div className="lg:col-span-4 bg-gradient-to-br from-[#F0F6FF] to-white border border-[#e6dfcd] p-8 rounded-3xl shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden">
-          {/* Animated concentric decorative circles */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-56 h-56 rounded-full border border-[#BFDBFE]/30 animate-pulse" />
-            <div className="w-40 h-40 rounded-full border border-[#BFDBFE]/50" />
-            <div className="w-24 h-24 rounded-full border border-[#BFDBFE]" />
-          </div>
-
-          <div className="relative z-10 space-y-6">
-            <div className="w-20 h-20 bg-[#2563EB]/10 border-2 border-[#2563EB] rounded-3xl flex items-center justify-center text-[#2563EB] mx-auto shadow-lg shadow-amber-500/10">
-              <Shield className="w-10 h-10 animate-bounce" style={{ animationDuration: '3s' }} />
             </div>
-            <div>
-              <h4 className="text-sm font-extrabold text-[#2A2A2A] uppercase tracking-wider">OriginX Suite</h4>
-              <p className="text-xs text-[#5c5c5c] max-w-[200px] mx-auto mt-2 leading-relaxed">
-                Recruitment channels protected, authenticated, and verified.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: "Total Scans Run", value: totalScans, icon: FileCheck, color: "text-blue-500 bg-blue-50 border-blue-100" },
-          { label: "Signals Checked", value: profileViewsChecked.toLocaleString(), icon: Eye, color: "text-purple-500 bg-purple-50 border-purple-100" },
-          { label: "Authentic Signals", value: authenticSignals, icon: Heart, color: "text-emerald-500 bg-emerald-50 border-emerald-100" },
-          { label: "Stopped Alerts", value: fraudIntercepts, icon: Briefcase, color: "text-rose-500 bg-rose-50 border-rose-100" }
-        ].map((m, idx) => (
-          <div key={idx} className="bg-white border border-[#e6dfcd] p-5 rounded-2xl shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${m.color.split(' ')[1]} ${m.color.split(' ')[0]} ${m.color.split(' ')[2]}`}>
-              <m.icon size={18} />
+            {/* Tabs */}
+            <div className="mt-4 border-b border-border flex gap-5">
+              {[
+                { id: "user", label: "Candidate portfolio" },
+                { id: "job", label: "Job posting" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => { setScanType(t.id); resetScanner(); }}
+                  className={`relative pb-2.5 text-[11px] font-display font-medium uppercase tracking-[0.12em] transition ${
+                    scanType === t.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                  {scanType === t.id && (
+                    <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-primary rounded-full" />
+                  )}
+                </button>
+              ))}
             </div>
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 leading-none">{m.label}</p>
-              <h4 className="text-2xl font-black text-[#2A2A2A] mt-1">{m.value}</h4>
-            </div>
-          </div>
-        ))}
-      </div>
 
-      {/* Grid: Interactive Scanner and Recent Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Interactive scanning panel (7 cols) */}
-        <div className="lg:col-span-7 bg-white border border-[#e6dfcd] p-6 rounded-3xl shadow-sm space-y-6">
-          
-          <div className="pb-4 border-b border-[#f5f4ef] flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-extrabold text-base text-[#2A2A2A] flex items-center gap-2">
-                <Terminal size={18} className="text-[#2563EB]" />
-                <span>Real-Time Security Scanner</span>
-              </h3>
-              <p className="text-xs text-[#5c5c5c] mt-0.5">Choose scan target to run AI safety audits.</p>
-            </div>
-          </div>
-
-          {/* Toggle Type tabs */}
-          <div className="flex border-b border-[#e6dfcd]">
-            <button
-              type="button"
-              onClick={() => { setScanType("user"); resetScanner(); }}
-              className={`pb-2.5 text-xs font-extrabold uppercase tracking-wider border-b-2 transition-all ${
-                scanType === "user"
-                  ? "border-[#2563EB] text-[#2563EB]"
-                  : "border-transparent text-gray-400 hover:text-[#2A2A2A]"
-              }`}
-            >
-              Scan Candidate Portfolio
-            </button>
-            <button
-              type="button"
-              onClick={() => { setScanType("job"); resetScanner(); }}
-              className={`ml-6 pb-2.5 text-xs font-extrabold uppercase tracking-wider border-b-2 transition-all ${
-                scanType === "job"
-                  ? "border-[#2563EB] text-[#2563EB]"
-                  : "border-transparent text-gray-400 hover:text-[#2A2A2A]"
-              }`}
-            >
-              Scan Job Posting
-            </button>
-          </div>
-
-          <AnimatePresence mode="wait">
-            {scanStep === "idle" && (
-              <motion.form 
-                onSubmit={handleStartScan}
-                className="space-y-4"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                {scanType === "user" ? (
-                  <>
-                    {/* File Upload zone */}
-                    <div className="border-2 border-dashed border-[#e6dfcd] hover:border-[#2563EB] rounded-2xl p-8 text-center cursor-pointer transition-colors bg-[#f5f4ef]/30 group">
-                      <input 
-                        type="file" 
-                        id="scanner-file" 
-                        className="hidden" 
-                        onChange={(e) => setSelectedFile(e.target.files[0])}
-                      />
-                      <label htmlFor="scanner-file" className="cursor-pointer space-y-2 block">
-                        <Upload className="mx-auto text-gray-300 group-hover:text-[#2563EB] transition-colors w-10 h-10" />
-                        <div className="text-xs font-bold text-[#2A2A2A]">
-                          {selectedFile ? `Selected File: ${selectedFile.name}` : "Upload candidate resume PDF / DOCX"}
+            <div className="mt-4 min-h-[160px]">
+              <AnimatePresence mode="wait">
+                {scanStep === "idle" && (
+                  <motion.form 
+                    onSubmit={handleStartScan}
+                    className="space-y-3"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {scanType === "user" ? (
+                      <>
+                        {/* File Upload Zone */}
+                        <div className="border border-dashed border-primary/30 rounded-xl py-6 px-4 flex flex-col items-center text-center bg-primary/[0.02] hover:bg-primary/[0.04] transition cursor-pointer relative group">
+                          <input 
+                            type="file" 
+                            id="scanner-file" 
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            onChange={(e) => setSelectedFile(e.target.files[0])}
+                          />
+                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-2">
+                            <Upload size={18} />
+                          </div>
+                          <div className="font-display text-[13px] font-medium text-foreground">
+                            {selectedFile ? `Selected: ${selectedFile.name}` : "Upload candidate resume (PDF / DOCX)"}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">PDF, DOCX, TXT · up to 10MB</div>
                         </div>
-                        <p className="text-[10px] text-gray-400">PDF, DOCX, TXT up to 10MB</p>
-                      </label>
-                    </div>
 
-                    <div className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest my-2">OR</div>
+                        {/* Divider */}
+                        <div className="flex items-center gap-3 my-2">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-[10px] font-medium text-muted-foreground tracking-[0.16em]">OR</span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
 
-                    {/* URL input */}
-                    <div className="relative">
-                      <LinkIcon className="absolute left-3.5 top-3.5 text-gray-400 w-4 h-4" />
-                      <input 
-                        type="text"
-                        value={urlInput}
-                        onChange={(e) => setUrlInput(e.target.value)}
-                        placeholder="Enter GitHub repository URL, Behance portfolio link..."
-                        className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 pl-10 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-[#2A2A2A] uppercase tracking-wider mb-1">Job Title</label>
-                        <input
-                          type="text"
-                          value={jobTitleInput}
-                          onChange={(e) => setJobTitleInput(e.target.value)}
-                          placeholder="e.g. Senior Product Designer"
-                          className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner"
-                        />
+                        {/* URL input */}
+                        <div className="relative">
+                          <Link2
+                            size={14}
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                          />
+                          <input
+                            type="text"
+                            value={urlInput}
+                            onChange={(e) => setUrlInput(e.target.value)}
+                            placeholder="GitHub repository URL, Behance portfolio link…"
+                            className="w-full h-10 pl-10 pr-3 rounded-full bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground placeholder:text-muted-foreground transition"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <input
+                              type="text"
+                              value={jobTitleInput}
+                              onChange={(e) => setJobTitleInput(e.target.value)}
+                              placeholder="Job Title (e.g. Frontend Engineer)"
+                              className="w-full h-10 px-3.5 rounded-xl bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground placeholder:text-muted-foreground transition"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              value={jobLocationInput}
+                              onChange={(e) => setJobLocationInput(e.target.value)}
+                              placeholder="Location (e.g. Remote)"
+                              className="w-full h-10 px-3.5 rounded-xl bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground placeholder:text-muted-foreground transition"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <textarea
+                            value={jobDescriptionInput}
+                            onChange={(e) => setJobDescriptionInput(e.target.value)}
+                            placeholder="Paste job posting description here to audit templates or phishing indicators..."
+                            rows={3}
+                            className="w-full p-3 rounded-xl bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground placeholder:text-muted-foreground transition resize-none"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-[#2A2A2A] uppercase tracking-wider mb-1">Location / Category</label>
-                        <input
-                          type="text"
-                          value={jobLocationInput}
-                          onChange={(e) => setJobLocationInput(e.target.value)}
-                          placeholder="e.g. Remote / Chicago, IL"
-                          className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-[#2A2A2A] uppercase tracking-wider mb-1">Job Posting Description</label>
-                      <textarea
-                        value={jobDescriptionInput}
-                        onChange={(e) => setJobDescriptionInput(e.target.value)}
-                        placeholder="Paste the description/requirements here to analyze for clone templates, ghost post indicators, or sketchy payment details..."
-                        rows={4}
-                        className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner resize-none"
-                      />
-                    </div>
-                  </div>
+                    )}
+
+                    <button 
+                      type="submit" 
+                      className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-full bg-primary text-primary-foreground font-display text-[13px] font-medium shadow-google-1 hover:shadow-google-2 transition"
+                    >
+                      <ScanSearch size={16} /> Start verification scan
+                    </button>
+                  </motion.form>
                 )}
 
-                <button 
-                  type="submit" 
-                  disabled={(scanType === "user" && !selectedFile && !urlInput.trim()) || (scanType === "job" && (!jobTitleInput.trim() || !jobDescriptionInput.trim()))}
-                  className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <Search size={16} />
-                  <span>Start Verification Scan</span>
-                </button>
-              </motion.form>
-            )}
-
-            {scanStep === "scanning" && (
-              <motion.div 
-                className="py-6 space-y-6"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <div className="flex flex-col items-center justify-center space-y-4">
-                  <RefreshCw className="animate-spin text-[#2563EB] w-10 h-10" />
-                  <div className="text-center">
-                    <h4 className="font-bold text-sm text-[#2A2A2A]">AI Scanning Suite Active</h4>
-                    <p className="text-[11px] text-[#5c5c5c] mt-0.5">Please wait, analyzing document profiles...</p>
-                  </div>
-                </div>
-
-                {/* Steps checklist with dynamic highlights */}
-                <div className="space-y-3 bg-[#f5f4ef]/40 border border-[#e6dfcd] rounded-2xl p-5">
-                  {scanSteps.map((step, idx) => {
-                    const isDone = idx < currentStepIdx;
-                    const isActive = idx === currentStepIdx;
-                    return (
-                      <div key={idx} className="flex items-center gap-3 text-xs">
-                        {isDone ? (
-                          <CheckCircle className="text-emerald-500 shrink-0 w-4.5 h-4.5" />
-                        ) : isActive ? (
-                          <RefreshCw className="text-[#2563EB] animate-spin shrink-0 w-4.5 h-4.5" />
-                        ) : (
-                          <div className="w-4.5 h-4.5 rounded-full border-2 border-gray-200 shrink-0" />
-                        )}
-                        <span className={`font-semibold ${isDone ? "text-gray-400 line-through" : isActive ? "text-[#2563EB] font-extrabold" : "text-[#5c5c5c]"}`}>
-                          {step.label}
-                        </span>
+                {scanStep === "scanning" && (
+                  <motion.div 
+                    className="py-4 space-y-4"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                      <RefreshCw className="animate-spin text-primary w-8 h-8" />
+                      <div className="text-center">
+                        <h4 className="font-bold text-xs text-foreground">AI Scanning Suite Active</h4>
+                        <p className="text-[10px] text-muted-foreground">Analyzing input signatures...</p>
                       </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
+                    </div>
 
-            {scanStep === "result" && scannedResult && (
-              <motion.div 
-                className="space-y-6"
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                {/* Result header */}
-                <div className={`p-5 border rounded-2xl flex items-start gap-4 ${
-                  scannedResult.originality_score >= 70
-                    ? "bg-emerald-50 border-emerald-100 text-emerald-800"
-                    : "bg-red-50 border-red-100 text-red-800"
-                }`}>
-                  <CheckCircle className={scannedResult.originality_score >= 70 ? "text-emerald-500 w-6 h-6 shrink-0 mt-0.5" : "text-rose-500 w-6 h-6 shrink-0 mt-0.5"} />
-                  <div>
-                    <h4 className="font-extrabold text-sm">
-                      {scannedResult.role === "Job Posting"
-                        ? `Job Posting Scan Completed: ${scannedResult.status}`
-                        : `Portfolio Scan Completed: ${scannedResult.status}`}
-                    </h4>
-                    <p className="text-xs mt-0.5">
-                      Verify report credentials generated for <strong>{scannedResult.candidate_name.replace("Job: ", "")}</strong>.
-                    </p>
-                  </div>
-                </div>
+                    <div className="space-y-2 bg-muted/50 border border-border rounded-xl p-3.5">
+                      {scanSteps.map((step, idx) => {
+                        const isDone = idx < currentStepIdx;
+                        const isActive = idx === currentStepIdx;
+                        return (
+                          <div key={idx} className="flex items-center gap-2.5 text-[11px]">
+                            {isDone ? (
+                              <CheckCircle2 className="text-[color:var(--success)] shrink-0 w-4 h-4" />
+                            ) : isActive ? (
+                              <RefreshCw className="text-primary animate-spin shrink-0 w-4 h-4" />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full border border-border shrink-0" />
+                            )}
+                            <span className={`font-medium ${isDone ? "text-muted-foreground line-through" : isActive ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                              {step.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
 
-                {/* Score stats */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-[#f5f4ef]/30 border border-[#e6dfcd] p-4 rounded-xl text-center">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">Originality</p>
-                    <h4 className={`text-2xl font-black mt-1 ${
-                      scannedResult.originality_score >= 80 ? "text-emerald-600" : scannedResult.originality_score >= 60 ? "text-amber-500" : "text-rose-500"
-                    }`}>{scannedResult.originality_score}%</h4>
-                  </div>
-                  <div className="bg-[#f5f4ef]/30 border border-[#e6dfcd] p-4 rounded-xl text-center">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">AI Content</p>
-                    <h4 className="text-2xl font-black text-[#2A2A2A] mt-1">{scannedResult.ai_probability}%</h4>
-                  </div>
-                  <div className="bg-[#f5f4ef]/30 border border-[#e6dfcd] p-4 rounded-xl text-center">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">Plagiarism</p>
-                    <h4 className="text-2xl font-black text-[#2A2A2A] mt-1">{scannedResult.plagiarism_score}%</h4>
-                  </div>
-                </div>
+                {scanStep === "result" && scannedResult && (
+                  <motion.div 
+                    className="space-y-4"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <div className={`p-3 border rounded-xl flex items-start gap-3 ${
+                      scannedResult.originality_score >= 70
+                        ? "bg-[color:var(--success)]/5 border-[color:var(--success)]/20 text-[color:var(--success)]"
+                        : "bg-[color:var(--danger)]/5 border-[color:var(--danger)]/20 text-[color:var(--danger)]"
+                    }`}>
+                      <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-[13px]">
+                          Scan Complete: {scannedResult.status}
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Verified credentials logged for <strong>{scannedResult.candidate_name.replace("Job: ", "")}</strong>.
+                        </p>
+                      </div>
+                    </div>
 
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  <p className="text-xs font-semibold text-[#5c5c5c] leading-relaxed">
-                    <strong>Scan Summary:</strong> {scannedResult.summary || "Scan verified safe and recorded."}
-                  </p>
-                </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-muted p-2 rounded-lg text-center">
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-bold">Originality</p>
+                        <h4 className={`text-[16px] font-bold mt-0.5 ${
+                          scannedResult.originality_score >= 80 ? "text-[color:var(--success)]" : scannedResult.originality_score >= 60 ? "text-[color:var(--warning)]" : "text-[color:var(--danger)]"
+                        }`}>{scannedResult.originality_score}%</h4>
+                      </div>
+                      <div className="bg-muted p-2 rounded-lg text-center">
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-bold">AI Content</p>
+                        <h4 className="text-[16px] font-bold text-foreground mt-0.5">{scannedResult.ai_probability}%</h4>
+                      </div>
+                      <div className="bg-muted p-2 rounded-lg text-center">
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-bold">Plagiarism</p>
+                        <h4 className="text-[16px] font-bold text-foreground mt-0.5">{scannedResult.plagiarism_score}%</h4>
+                      </div>
+                    </div>
 
-                {/* Actions */}
-                <div className="flex gap-3 pt-2">
-                  <button onClick={resetScanner} className="flex-1 bg-white border border-[#e6dfcd] hover:border-[#2563EB] font-bold text-xs py-3 rounded-xl transition-all">
-                    Scan Another Target
-                  </button>
-                  <button onClick={resetScanner} className="flex-1 bg-[#2A2A2A] hover:bg-black text-white font-bold text-xs py-3 rounded-xl transition-all">
-                    Reset Scanner View
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                    <div className="p-3 bg-muted/40 rounded-lg border border-border text-[11px] text-muted-foreground">
+                      <strong>Summary:</strong> {scannedResult.summary || "All credentials verified clean."}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button onClick={resetScanner} className="flex-1 inline-flex items-center justify-center h-9 rounded-full bg-primary/5 text-primary border border-primary/20 text-[11px] font-medium hover:bg-primary/10 transition">
+                        Scan another target
+                      </button>
+                      <button onClick={resetScanner} className="flex-1 inline-flex items-center justify-center h-9 rounded-full bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/95 transition">
+                        Reset scanner
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
 
-        {/* Recent alerts panel (5 cols) */}
-        <div className="lg:col-span-5 bg-white border border-[#e6dfcd] p-6 rounded-3xl shadow-sm space-y-6 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="pb-4 border-b border-[#f5f4ef] flex justify-between items-center">
-              <h3 className="font-extrabold text-base text-[#2A2A2A]">Recent Protection Alerts</h3>
+        {/* Recent Alerts */}
+        <div className="bg-card border border-border rounded-xl p-4 hover:shadow-google-1 transition flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-[15px] font-bold text-foreground">Recent alerts</h2>
+              <button className="text-[11px] text-primary font-display font-medium hover:underline">View all</button>
             </div>
 
-            <div className="space-y-3">
-              {alerts.map((a, index) => (
-                <div key={a.id || index} className={`p-4 border rounded-2xl flex gap-3.5 ${a.color}`}>
+            <div className="space-y-2">
+              {alerts.map((a, idx) => (
+                <div key={idx} className={`p-3 border rounded-xl flex gap-3 ${a.color}`}>
                   {a.type === "critical" ? (
-                    <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5 text-[color:var(--danger)]" />
                   ) : a.type === "warning" ? (
-                    <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                    <AlertCircle size={15} className="shrink-0 mt-0.5 text-[color:var(--warning)]" />
                   ) : (
-                    <Shield size={18} className="shrink-0 mt-0.5" />
+                    <Shield size={15} className="shrink-0 mt-0.5 text-[color:var(--success)]" />
                   )}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-baseline gap-2">
-                      <h4 className="font-extrabold text-xs leading-none">{a.title}</h4>
-                      <span className="text-[9px] font-bold opacity-60 leading-none">{a.time}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-[12px] truncate">{a.title}</h4>
+                      <span className="text-[9px] opacity-60 shrink-0">{a.time}</span>
                     </div>
-                    <p className="text-[10px] leading-relaxed opacity-80 font-medium">{a.desc}</p>
+                    <p className="text-[11px] opacity-80 mt-0.5 line-clamp-2 leading-tight">{a.desc}</p>
                   </div>
                 </div>
               ))}
@@ -681,30 +658,33 @@ export default function FraudDetectionPage() {
         </div>
       </div>
 
-      {/* Scanned Candidates & Jobs List */}
-      <div className="bg-white border border-[#e6dfcd] p-6 rounded-3xl shadow-sm space-y-6">
-        <div className="pb-4 border-b border-[#f5f4ef]">
-          <h3 className="font-extrabold text-base text-[#2A2A2A]">Scan logs history</h3>
-          <p className="text-xs text-[#5c5c5c] mt-0.5">Logs of recently scanned candidate profiles and job posting descriptions.</p>
+      {/* Scan logs table */}
+      <section className="bg-card border border-border rounded-xl hover:shadow-google-1 transition overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div>
+            <h2 className="font-display text-[15px] font-bold text-foreground leading-tight">Scan logs</h2>
+            <p className="text-[11px] text-muted-foreground">Recently scanned profiles & postings.</p>
+          </div>
+          <button className="text-[11px] text-primary font-display font-medium hover:underline">Export</button>
         </div>
 
         {loadingHistory ? (
           <div className="py-8 flex justify-center items-center">
-            <RefreshCw className="animate-spin text-gray-300 w-8 h-8" />
+            <RefreshCw className="animate-spin text-muted-foreground w-6 h-6" />
           </div>
         ) : historyList.length === 0 ? (
-          <div className="text-center py-8 text-xs text-gray-400">
-            No scans recorded in the history log database yet.
+          <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+            No scans recorded yet.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-[#f5f4ef] text-gray-400 font-extrabold uppercase tracking-wider">
-                  <th className="py-3 px-4">Scan Target</th>
-                  <th className="py-3 px-4">Trust Score</th>
-                  <th className="py-3 px-4">Flags & Portfolios</th>
-                  <th className="py-3 px-4 text-right">Status</th>
+                <tr className="border-b border-border bg-muted/40 text-muted-foreground font-medium uppercase tracking-[0.08em] text-[10px]">
+                  <th className="py-2.5 px-4 font-bold">Scan Target</th>
+                  <th className="py-2.5 px-4 font-bold">Trust Score</th>
+                  <th className="py-2.5 px-4 font-bold">Flags & Portfolios</th>
+                  <th className="py-2.5 px-4 font-bold text-right">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -715,42 +695,44 @@ export default function FraudDetectionPage() {
                     <tr 
                       key={cand.id} 
                       onClick={() => setActiveReport(cand)}
-                      className={`border-b border-[#f5f4ef] hover:bg-[#f5f4ef]/25 cursor-pointer transition-colors font-medium ${
-                        activeReport?.id === cand.id ? "bg-[#F0F6FF]" : ""
+                      className={`border-b border-border hover:bg-muted/30 cursor-pointer transition-colors text-[13px] ${
+                        activeReport?.id === cand.id ? "bg-primary/5 font-medium" : "text-foreground"
                       }`}
                     >
-                      <td className="py-4 px-4 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-[#f5f4ef] border border-[#e6dfcd] text-[#2563EB] font-extrabold flex items-center justify-center uppercase shadow-inner shrink-0">
-                          {isJob ? "J" : (nameDisplay ? nameDisplay[0] : "C")}
-                        </div>
-                        <div>
-                          <p className="font-bold text-[#2A2A2A]">{nameDisplay}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">
-                            {isJob ? "Job Posting" : cand.role} • {cand.location}
-                          </p>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center uppercase shrink-0 text-[11px]">
+                            {isJob ? "J" : (nameDisplay ? nameDisplay[0] : "C")}
+                          </div>
+                          <div>
+                            <div className="font-bold text-foreground leading-snug">{nameDisplay}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {isJob ? "Job Posting" : cand.role} • {cand.location}
+                            </div>
+                          </div>
                         </div>
                       </td>
-                      <td className="py-4 px-4">
-                        <span className={`font-black text-sm ${
-                          cand.originality_score >= 80 ? "text-emerald-500" : cand.originality_score >= 60 ? "text-amber-500" : "text-red-500"
+                      <td className="py-3 px-4">
+                        <span className={`font-bold ${
+                          cand.originality_score >= 80 ? "text-[color:var(--success)]" : cand.originality_score >= 60 ? "text-[color:var(--warning)]" : "text-[color:var(--danger)]"
                         }`}>
                           {cand.originality_score}%
                         </span>
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1">
                           {cand.portfolios && cand.portfolios.map((p, pIdx) => (
-                            <span key={pIdx} className="bg-[#f5f4ef] text-gray-500 text-[10px] px-2 py-0.5 rounded font-semibold border border-[#e6dfcd]">
+                            <span key={pIdx} className="bg-muted text-foreground text-[10px] px-2 py-0.5 rounded font-medium border border-border">
                               {p}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-right">
-                        <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                      <td className="py-3 px-4 text-right">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                           cand.status === "Verified Clean" 
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
-                            : "bg-red-50 text-red-700 border border-red-100"
+                            ? "bg-[color:var(--success)]/10 text-[color:var(--success)]" 
+                            : "bg-[color:var(--danger)]/10 text-[color:var(--danger)]"
                         }`}>
                           {cand.status}
                         </span>
@@ -762,7 +744,7 @@ export default function FraudDetectionPage() {
             </table>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

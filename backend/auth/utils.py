@@ -8,6 +8,7 @@ for the dashboard_login flow.
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Tuple
 
 from passlib.context import CryptContext
 from jose import jwt, JWTError
@@ -24,7 +25,7 @@ _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── API Key helpers ─────────────────────────────────────────────────────────
 
-def generate_api_key() -> tuple[str, str]:
+def generate_api_key() -> Tuple[str, str]:
     """
     Generate a new API key.
 

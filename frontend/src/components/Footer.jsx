@@ -18,13 +18,13 @@ const Footer = () => {
   };
 
   const linkUrls = {
-    "For Enterprise": "/#features",
+    "For Enterprise": "/admin#features",
     "For Developers": "/developer",
-    "Board": "/dashboard",
-    "Pricing": "/#pricing",
-    "Sign In": "/login",
+    "Board": "/admin/dashboard",
+    "Pricing": "/admin#pricing",
+    "Sign In": "/admin/login",
     "Careers": "/jobs",
-    "About": "/#product",
+    "About": "/admin#product",
     "Documentation": "/developer/portal/docs",
     "API Reference": "/developer/portal/docs"
   };

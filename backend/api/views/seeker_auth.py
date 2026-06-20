@@ -63,6 +63,33 @@ def require_seeker_jwt(view_func):
 
 
 def _seeker_dict(seeker: JobSeekerAccount) -> dict:
+    resume = seeker.resume_data or {}
+    
+    # Calculate stats dynamically
+    from api.models import JobApplication, SavedJob
+    applications_count = JobApplication.objects.filter(seeker=seeker).count()
+    interviews_count = JobApplication.objects.filter(seeker=seeker, status__in=["shortlisted", "interview"]).count()
+    saved_jobs_count = SavedJob.objects.filter(seeker=seeker).count()
+    
+    # Calculate profile strength
+    profile_strength = 0
+    if seeker.full_name: profile_strength += 10
+    if seeker.headline: profile_strength += 10
+    if seeker.location: profile_strength += 10
+    if seeker.resume_file_path: profile_strength += 20
+    
+    experience = resume.get("experience", [])
+    if experience: profile_strength += 15
+    
+    education = resume.get("education", [])
+    if education: profile_strength += 10
+    
+    if seeker.skills and len(seeker.skills) >= 3: profile_strength += 15
+    
+    open_to = resume.get("open_to", {})
+    work_types = open_to.get("workTypes", []) or open_to.get("work_types", [])
+    if work_types: profile_strength += 10
+    
     return {
         "id": str(seeker.id),
         "full_name": seeker.full_name,
@@ -72,8 +99,24 @@ def _seeker_dict(seeker: JobSeekerAccount) -> dict:
         "headline": seeker.headline,
         "tier": seeker.tier,
         "has_resume": bool(seeker.resume_file_path or seeker.resume_data),
-        "skills": seeker.skills,
+        "resume_file_path": seeker.resume_file_path,
+        "resume_data": seeker.resume_data or {},
+        "skills": seeker.skills or [],
         "created_at": seeker.created_at.isoformat() if seeker.created_at else None,
+        
+        # Resume metadata
+        "resume_file_name": resume.get("resume_file_name"),
+        "resume_updated_at": resume.get("resume_updated_at"),
+        "resume_size": resume.get("resume_size"),
+        
+        # Preferences
+        "open_to": open_to,
+        
+        # Stats
+        "applications_count": applications_count,
+        "interviews_count": interviews_count,
+        "saved_jobs_count": saved_jobs_count,
+        "profile_strength": profile_strength,
     }
 
 
@@ -84,6 +127,10 @@ def register(request):
     if request.method != "POST":
         return JsonResponse(error_response("Method not allowed"), status=405)
     try:
+        import os
+        import uuid
+        import shutil
+        
         data = json.loads(request.body)
         email = (data.get("email") or "").strip().lower()
         password = data.get("password", "")
@@ -98,15 +145,62 @@ def register(request):
         if JobSeekerAccount.objects.filter(email=email).exists():
             return JsonResponse(error_response("An account with this email already exists"), status=400)
 
+        # Collect extra details if provided (from multi-step register)
+        phone = data.get("phone", "").strip() or None
+        location = data.get("location", "").strip() or None
+        headline = data.get("headline", "").strip() or data.get("title", "").strip() or None
+        
+        skills = data.get("skills", [])
+        experience = data.get("experience", [])
+        education = data.get("education", [])
+        open_to = data.get("openTo", {}) or data.get("open_to", {})
+        
+        temp_file_path = data.get("temp_file_path")
+        file_name = data.get("file_name") or data.get("resume_file_name")
+        file_size_kb = data.get("file_size_kb") or data.get("resume_size")
+        total_experience_years = data.get("total_experience_years", 0)
+
         seeker = JobSeekerAccount.objects.create(
             full_name=full_name,
             email=email,
             password_hash=pwd_context.hash(password[:72]),
-            phone=data.get("phone", "").strip() or None,
-            location=data.get("location", "").strip() or None,
-            headline=data.get("headline", "").strip() or None,
+            phone=phone,
+            location=location,
+            headline=headline,
+            skills=skills,
             tier="free",
         )
+        
+        # Store resume data JSON
+        resume_data = {
+            "experience": experience,
+            "education": education,
+            "total_experience_years": total_experience_years,
+            "open_to": open_to,
+        }
+
+        # If a temp file was uploaded, move it to seeker's directory
+        if temp_file_path and os.path.exists(temp_file_path):
+            upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+            seeker_dir = os.path.join(upload_dir, "seekers", str(seeker.id))
+            os.makedirs(seeker_dir, exist_ok=True)
+            
+            permanent_name = f"{uuid.uuid4()}_{os.path.basename(temp_file_path)}"
+            permanent_path = os.path.join(seeker_dir, permanent_name)
+            
+            try:
+                shutil.move(temp_file_path, permanent_path)
+                seeker.resume_file_path = permanent_path
+                
+                # Save file metadata in resume_data
+                resume_data["resume_file_name"] = file_name or os.path.basename(temp_file_path)
+                resume_data["resume_updated_at"] = datetime.utcnow().isoformat() + "Z"
+                resume_data["resume_size"] = file_size_kb or round(os.path.getsize(permanent_path) / 1024, 2)
+            except Exception as move_err:
+                logger.error("Failed to move temp resume file: %s", move_err)
+
+        seeker.resume_data = resume_data
+        seeker.save()
 
         token = _make_seeker_token(seeker)
         return JsonResponse(success_response({
@@ -178,9 +272,32 @@ def update_profile(request):
         if "location" in data:
             seeker.location = data["location"].strip() or None
             fields_changed.append("location")
-        if "headline" in data:
-            seeker.headline = data["headline"].strip() or None
+        if "headline" in data or "title" in data:
+            seeker.headline = (data.get("headline") or data.get("title") or "").strip() or None
             fields_changed.append("headline")
+        if "skills" in data:
+            seeker.skills = data["skills"]
+            fields_changed.append("skills")
+
+        # Handle updating resume_data fields (experience, education, open_to)
+        resume = seeker.resume_data or {}
+        resume_changed = False
+        
+        if "experience" in data:
+            resume["experience"] = data["experience"]
+            resume_changed = True
+            
+        if "education" in data:
+            resume["education"] = data["education"]
+            resume_changed = True
+            
+        if "open_to" in data or "openTo" in data:
+            resume["open_to"] = data.get("open_to") or data.get("openTo")
+            resume_changed = True
+
+        if resume_changed:
+            seeker.resume_data = resume
+            fields_changed.append("resume_data")
 
         if fields_changed:
             seeker.save(update_fields=fields_changed)

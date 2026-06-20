@@ -159,7 +159,7 @@ const DetailedShowcase = () => {
                   <button className="btn btn-primary" style={{ gap: '10px' }}>
                     <PlayCircle size={18} /> Watch Demo
                   </button>
-                  <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>Try Dashboard</button>
+                  <button className="btn btn-secondary" onClick={() => navigate('/admin/dashboard')}>Try Dashboard</button>
                 </div>
               </div>
 

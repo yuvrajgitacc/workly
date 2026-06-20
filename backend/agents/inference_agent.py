@@ -20,7 +20,9 @@ class SkillInferenceAgent:
           "minimum_experience_years": integer,
           "preferred_locations": [string],
           "key_responsibilities": [string (top 5)],
-          "industry": string
+          "industry": string,
+          "salary_range": string (extract salary range, e.g. "₹18-32 LPA" or "$120k - $140k" if specified in job description, default to "Competitive"),
+          "employment_type": "Full-time"|"Part-time"|"Contract"|"Internship" (default to "Full-time")
         }}
         
         Job Description:
@@ -55,5 +57,7 @@ class SkillInferenceAgent:
                 "minimum_experience_years": 0,
                 "preferred_locations": [],
                 "key_responsibilities": [],
-                "industry": "Unknown"
+                "industry": "Unknown",
+                "salary_range": "Competitive",
+                "employment_type": "Full-time"
             }

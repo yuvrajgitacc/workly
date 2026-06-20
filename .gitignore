@@ -54,3 +54,9 @@ htmlcov/
 
 # Inspiration / Design References
 inspiration_ui/
+
+# Secrets and large binaries
+backend/env
+backend/dump.rdb
+dump.rdb
+backend/redis_bin/

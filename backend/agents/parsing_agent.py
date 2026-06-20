@@ -1,8 +1,11 @@
 import pdfplumber, fitz, os, json, uuid
+import threading
 from docx import Document
 from agents.llm import RotateLLMClient
 from pathlib import Path
 import re
+
+pymupdf_lock = threading.Lock()
 
 class ResumeParsingAgent:
     def __init__(self):
@@ -150,16 +153,17 @@ class ResumeParsingAgent:
 
     def _extract_pdf_photo(self, path):
         try:
-            doc = fitz.open(path)
-            for page in doc:
-                for img in page.get_images():
-                    xref = img[0]
-                    base = doc.extract_image(xref)
-                    img_bytes = base["image"]
-                    photo_path = f"{self.photo_dir}/{uuid.uuid4()}.jpg"
-                    with open(photo_path, "wb") as f: 
-                        f.write(img_bytes)
-                    return photo_path
+            with pymupdf_lock:
+                doc = fitz.open(path)
+                for page in doc:
+                    for img in page.get_images():
+                        xref = img[0]
+                        base = doc.extract_image(xref)
+                        img_bytes = base["image"]
+                        photo_path = f"{self.photo_dir}/{uuid.uuid4()}.jpg"
+                        with open(photo_path, "wb") as f: 
+                            f.write(img_bytes)
+                        return photo_path
         except: 
             return None
 

@@ -18,23 +18,84 @@ def register(request):
     if request.method != "POST":
         return JsonResponse(error_response("Method not allowed"), status=405)
     try:
-        data = json.loads(request.body)
-        email = data.get("email")
-        password = data.get("password")
+        # Check if the request is JSON or multipart/form-data
+        content_type = request.META.get('CONTENT_TYPE', '')
+        if 'application/json' in content_type:
+            data = json.loads(request.body)
+            email = data.get("email")
+            password = data.get("password")
+            company_name = data.get("name") or data.get("company_name") or "Unnamed Company"
+            industry = data.get("industry")
+            hq_location = data.get("hq_location") or data.get("location")
+            company_size = data.get("company_size") or data.get("size")
+            try:
+                founded_year = int(data.get("founded_year") or data.get("founded")) if (data.get("founded_year") or data.get("founded")) else None
+            except (ValueError, TypeError):
+                founded_year = None
+            website_url = data.get("website_url") or data.get("website")
+            about = data.get("about") or data.get("description")
+            logo_file = None
+        else:
+            email = request.POST.get("email")
+            password = request.POST.get("password")
+            company_name = request.POST.get("name") or request.POST.get("company_name") or "Unnamed Company"
+            industry = request.POST.get("industry")
+            hq_location = request.POST.get("hq_location") or request.POST.get("location")
+            company_size = request.POST.get("company_size") or request.POST.get("size")
+            try:
+                founded_year = int(request.POST.get("founded_year") or request.POST.get("founded")) if (request.POST.get("founded_year") or request.POST.get("founded")) else None
+            except (ValueError, TypeError):
+                founded_year = None
+            website_url = request.POST.get("website_url") or request.POST.get("website")
+            about = request.POST.get("about") or request.POST.get("description")
+            logo_file = request.FILES.get("logo")
+
         if not email or not password:
             return JsonResponse(error_response("Email and password are required"), status=400)
 
         if Company.objects.filter(email=email).exists():
             return JsonResponse(error_response("Email already registered"), status=400)
 
-        company_name = data.get("name") or data.get("company_name") or "Unnamed Company"
         hashed_pwd = pwd_context.hash(password[:72])
+
+        # Generate slug from company name
+        from django.utils.text import slugify
+        base_slug = slugify(company_name)
+        if not base_slug:
+            base_slug = "company"
+        slug = base_slug
+        counter = 1
+        while Company.objects.filter(slug=slug).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
         new_company = Company.objects.create(
             name=company_name,
             email=email,
             password_hash=hashed_pwd,
-            tier="free"
+            tier="free",
+            industry=industry,
+            hq_location=hq_location,
+            company_size=company_size,
+            founded_year=founded_year,
+            website_url=website_url,
+            about=about,
+            slug=slug
         )
+
+        if logo_file:
+            import uuid
+            upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+            comp_dir = os.path.join(upload_dir, "companies", str(new_company.id))
+            os.makedirs(comp_dir, exist_ok=True)
+            ext = os.path.splitext(logo_file.name)[1]
+            fname = f"logo_{uuid.uuid4().hex}{ext}"
+            file_path = os.path.join(comp_dir, fname)
+            with open(file_path, "wb+") as f:
+                for chunk in logo_file.chunks():
+                    f.write(chunk)
+            new_company.logo_path = f"/uploads/companies/{new_company.id}/{fname}"
+            new_company.save(update_fields=["logo_path"])
 
         secret = "vish_live_" + secrets.token_urlsafe(24)
         public = "vish_pub_" + secrets.token_urlsafe(24)
@@ -160,9 +221,12 @@ def get_api_keys(request):
             this_month_calls = 0
             for action in ["parse", "match", "chat"]:
                 redis_key = f"rl:{k.secret_key}:{year_month}:{action}"
-                val = redis_client.get(redis_key)
-                if val:
-                    this_month_calls += int(val)
+                try:
+                    val = redis_client.get(redis_key)
+                    if val:
+                        this_month_calls += int(val)
+                except Exception:
+                    pass
 
             result.append({
                 "id": str(k.id),
@@ -211,7 +275,14 @@ def me(request):
         "name": request.company.name,
         "email": request.company.email,
         "tier": request.company.tier,
-        "created_at": request.company.created_at.isoformat() if request.company.created_at else None
+        "created_at": request.company.created_at.isoformat() if request.company.created_at else None,
+        "industry": request.company.industry,
+        "hq_location": request.company.hq_location,
+        "company_size": request.company.company_size,
+        "founded_year": request.company.founded_year,
+        "website_url": request.company.website_url,
+        "about": request.company.about,
+        "logo_path": request.company.logo_path,
     }))
 
 @csrf_exempt
@@ -261,6 +332,7 @@ def update_profile(request):
         data = json.loads(request.body)
         name = data.get("name") or data.get("company_name")
         email = data.get("email")
+        logo_base64 = data.get("logo")
 
         company = request.company
         if name:
@@ -270,14 +342,45 @@ def update_profile(request):
                 return JsonResponse(error_response("Email already registered by another account"), status=400)
             company.email = email
 
+        # Handle company logo Base64 upload
+        if logo_base64:
+            import base64
+            import uuid
+            if logo_base64.startswith("data:"):
+                # format: data:image/png;base64,iVBORw0KGgoAAA...
+                header, base64_data = logo_base64.split(";base64,")
+                ext = "." + header.split("/")[1].split("+")[0]
+                if ext == ".jpeg":
+                    ext = ".jpg"
+            else:
+                base64_data = logo_base64
+                ext = ".png"
+
+            img_data = base64.b64decode(base64_data)
+            upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+            comp_dir = os.path.join(upload_dir, "companies", str(company.id))
+            os.makedirs(comp_dir, exist_ok=True)
+
+            fname = f"logo_{uuid.uuid4().hex}{ext}"
+            file_path = os.path.join(comp_dir, fname)
+
+            with open(file_path, "wb") as f:
+                f.write(img_data)
+
+            company.logo_path = f"/uploads/companies/{company.id}/{fname}"
+        elif "logo" in data and not data.get("logo"):
+            company.logo_path = None
+
         company.save()
         return JsonResponse(success_response({
             "id": str(company.id),
             "name": company.name,
             "email": company.email,
             "tier": company.tier,
+            "logo_path": company.logo_path,
             "created_at": company.created_at.isoformat() if company.created_at else None
         }))
     except Exception as e:
         return JsonResponse(error_response(f"Server error: {str(e)}"), status=500)
+
 

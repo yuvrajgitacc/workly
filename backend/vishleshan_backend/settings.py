@@ -34,21 +34,13 @@ TEMPLATES = []
 WSGI_APPLICATION = 'vishleshan_backend.wsgi.application'
 ASGI_APPLICATION = 'vishleshan_backend.asgi.application'
 
-# Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:password@localhost:5432/vishleshan")
-# Convert asyncpg to standard postgresql engine for Django ORM
-SYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
-
+# Database configuration using SQLite
 DATABASES = {
-    'default': dj_database_url.parse(
-        SYNC_DATABASE_URL,
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
-
-# Use PostgreSQL engine
-DATABASES['default']['ENGINE'] = 'django.db.backends.postgresql'
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'

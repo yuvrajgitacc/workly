@@ -18,7 +18,7 @@ export default function LandingPage() {
 
   const handleAuth = () => {
     if (localStorage.getItem("vish_jwt")) {
-      navigate('/dashboard');
+      navigate('/admin/dashboard');
     } else {
       navigate('/login');
     }

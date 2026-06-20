@@ -58,7 +58,7 @@ export default function AuthVerifyPage() {
 
         // Navigate to the Vishleshan dashboard
         setTimeout(() => {
-          navigate("/dashboard");
+          navigate("/admin/dashboard");
         }, 1200);
       } catch (err) {
         setStatus("error");

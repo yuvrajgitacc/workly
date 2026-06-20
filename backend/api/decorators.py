@@ -1,11 +1,14 @@
 import os
 import calendar
 import redis
+import logging
 from datetime import datetime
 from functools import wraps
 from django.http import JsonResponse
 from django.utils import timezone
 from jose import jwt, JWTError
+
+logger = logging.getLogger(__name__)
 
 from api.models import Company, APIKey, DeveloperAccount, DeveloperAPIKey
 
@@ -219,27 +222,30 @@ def check_rate_limit(action: str):
             year_month = now.strftime("%Y-%m")
             redis_key = f"rl:{api_key.secret_key}:{year_month}:{action}"
             
-            used = redis_client.incr(redis_key)
-            
-            if used == 1:
-                last_day = calendar.monthrange(now.year, now.month)[1]
-                end_of_month = datetime(now.year, now.month, last_day, 23, 59, 59)
-                ttl = int((end_of_month - now).total_seconds())
-                redis_client.expire(redis_key, ttl)
+            try:
+                used = redis_client.incr(redis_key)
                 
-            if used > action_limit:
-                redis_client.decr(redis_key)
-                return JsonResponse({
-                    "success": False,
-                    "error": f"Monthly {action} limit reached",
-                    "data": {
-                        "limit": action_limit,
-                        "used": used - 1,
-                        "tier": tier,
-                        "resets_on": "first of next month",
-                        "upgrade_url": "/developer/portal/billing"
-                    }
-                }, status=429)
+                if used == 1:
+                    last_day = calendar.monthrange(now.year, now.month)[1]
+                    end_of_month = datetime(now.year, now.month, last_day, 23, 59, 59)
+                    ttl = int((end_of_month - now).total_seconds())
+                    redis_client.expire(redis_key, ttl)
+                    
+                if used > action_limit:
+                    redis_client.decr(redis_key)
+                    return JsonResponse({
+                        "success": False,
+                        "error": f"Monthly {action} limit reached",
+                        "data": {
+                            "limit": action_limit,
+                            "used": used - 1,
+                            "tier": tier,
+                            "resets_on": "first of next month",
+                            "upgrade_url": "/developer/portal/billing"
+                        }
+                    }, status=429)
+            except Exception as redis_err:
+                logger.warning("Redis rate limit check failed, bypassing: %s", redis_err)
                 
             return view_func(request, *args, **kwargs)
         return _wrapped_view

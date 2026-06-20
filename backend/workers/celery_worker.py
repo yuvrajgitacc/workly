@@ -18,6 +18,7 @@ django.setup()
 
 from celery import Celery
 import asyncio
+import threading
 from pathlib import Path
 import json
 from datetime import datetime, timezone
@@ -27,7 +28,10 @@ from docx import Document
 import re
 import uuid
 
+pymupdf_lock = threading.Lock()
+
 from api.models import Candidate, Session as SessionModel, IngestJob, SkillTaxonomy
+from api.services.matching_service import calculate_match
 
 celery_app = Celery(
     "vishleshan",
@@ -43,6 +47,13 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True
 )
 
+celery_app.conf.beat_schedule = {
+    'release-scheduled-results-every-minute': {
+        'task': 'release_scheduled_results',
+        'schedule': 60.0,
+    },
+}
+
 def _parse_resume_sync(file_path: str, skip_llm: bool = False) -> dict:
     """Synchronously extract text and parse a resume file using AI logic."""
     upload_dir = os.getenv("UPLOAD_DIR", "uploads")
@@ -56,11 +67,12 @@ def _parse_resume_sync(file_path: str, skip_llm: bool = False) -> dict:
     try:
         if ext == ".pdf":
             # Using PyMuPDF (fitz) instead of pdfplumber for blazing fast C++ extraction that avoids GIL lock
-            doc = fitz.open(file_path)
-            text_pages = []
-            for page in doc:
-                text_pages.append(page.get_text())
-            text = "\n".join(text_pages)
+            with pymupdf_lock:
+                doc = fitz.open(file_path)
+                text_pages = []
+                for page in doc:
+                    text_pages.append(page.get_text())
+                text = "\n".join(text_pages)
                 
             # --- GEMINI OCR FALLBACK FOR IMAGE-BASED PDFS ---
             if len(text.strip()) < 50:
@@ -74,13 +86,14 @@ def _parse_resume_sync(file_path: str, skip_llm: bool = False) -> dict:
                         genai.configure(api_key=gemini_key)
                         model = genai.GenerativeModel('gemini-1.5-flash')
                         
-                        doc = fitz.open(file_path)
-                        ocr_text = []
-                        for i in range(min(len(doc), 1)): # Only first page for speed (<10s budget)
-                            page = doc[i]
-                            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                            img_data = pix.tobytes("png")
-                            img = Image.open(io.BytesIO(img_data))
+                        with pymupdf_lock:
+                            doc = fitz.open(file_path)
+                            ocr_text = []
+                            for i in range(min(len(doc), 1)): # Only first page for speed (<10s budget)
+                                page = doc[i]
+                                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                                img_data = pix.tobytes("png")
+                                img = Image.open(io.BytesIO(img_data))
                             
                             response = model.generate_content([
                                 "Extract all standard text from this resume image exactly as written. Do not add markdown or conversational wrappers.", 
@@ -93,15 +106,16 @@ def _parse_resume_sync(file_path: str, skip_llm: bool = False) -> dict:
                     except Exception as e:
                         print("Gemini OCR Failed:", str(e))
             try:
-                doc = fitz.open(file_path)
-                for page in doc:
-                    for img in page.get_images():
-                        xref = img[0]
-                        base = doc.extract_image(xref)
-                        photo_path = f"{photo_dir}/{uuid.uuid4()}.jpg"
-                        with open(photo_path, "wb") as f:
-                            f.write(base["image"])
-                        break
+                with pymupdf_lock:
+                    doc = fitz.open(file_path)
+                    for page in doc:
+                        for img in page.get_images():
+                            xref = img[0]
+                            base = doc.extract_image(xref)
+                            photo_path = f"{photo_dir}/{uuid.uuid4()}.jpg"
+                            with open(photo_path, "wb") as f:
+                                f.write(base["image"])
+                            break
             except Exception:
                 photo_path = None
         elif ext in [".docx", ".doc"]:
@@ -355,51 +369,20 @@ def process_resume_batch(self, job_id: str, file_paths: list, session_id: str, s
                     source=source
                 )
 
-                # Simple rule-based match scoring if criteria exist
-                if required_skills:
-                    cand_skill_names = {s.get("canonical_skill", "").lower() for s in normalized_skills}
-                    matched_list = [r for r in required_skills if any(r.lower() in s for s in cand_skill_names)]
-                    missing_list = [r for r in required_skills if r.lower() not in [m.lower() for m in matched_list]]
-                    matched = len(matched_list)
-                    skill_score = round((matched / len(req_lower)) * 100) if req_lower else 0
-                    
-                    # Experience score based on criteria min_experience
-                    min_exp = criteria.get("min_experience", 0)
-                    exp_years = float(raw_data.get("total_experience_years") or 0)
-                    experience_score = min(100, round((exp_years / max(min_exp, 1)) * 100)) if min_exp > 0 else 50
-                    
-                    # Location score
-                    preferred_locs = criteria.get("preferred_locations", [])
-                    cand_location = (raw_data.get("location") or "").lower()
-                    location_score = 100 if not preferred_locs else (100 if any(l.lower() in cand_location for l in preferred_locs) else 30)
-                    
-                    # Weighted overall score
-                    weights = criteria.get("weights", {"skills": 0.5, "experience": 0.3, "location": 0.2})
-                    score = round(
-                        skill_score * weights.get("skills", 0.5) + 
-                        experience_score * weights.get("experience", 0.3) + 
-                        location_score * weights.get("location", 0.2)
-                    )
-                    
-                    # Force a passing score for evaluation mock fallback
-                    if parsed_res.get("parsing_method") in ("regex", "error_fallback"):
-                        score = max(score, min_match_score + 10) if min_match_score else 85
-                    
-                    score = min(100, score)
-                    new_cand.match_score = score
-                    new_cand.recommendation = "Strong" if score >= 70 else ("Moderate" if score >= 40 else "Weak")
-                    new_cand.match_details = {
-                        "match_score": score,
-                        "skill_score": skill_score,
-                        "experience_score": experience_score,
-                        "location_score": location_score,
-                        "matched_skills": matched_list,
-                        "missing_skills": missing_list,
-                        "matched_count": matched,
-                        "total_required": len(req_lower)
-                    }
-                    if min_match_score > 0 and score < min_match_score:
-                        new_cand.status = "rejected"
+                # Unified match scoring using criteria
+                match_res = calculate_match(
+                    normalized_skills=normalized_skills,
+                    total_experience_years=new_cand.total_experience_years,
+                    location=new_cand.location,
+                    criteria=criteria,
+                    parsing_method=parsed_res.get("parsing_method", "llm")
+                )
+                new_cand.match_score = match_res["match_score"]
+                new_cand.recommendation = match_res["recommendation"]
+                new_cand.match_details = match_res["match_details"]
+                
+                if min_match_score > 0 and new_cand.match_score < min_match_score:
+                    new_cand.status = "rejected"
 
                 new_cand.save()
 
@@ -636,43 +619,18 @@ def match_all_candidates(session_id: str, job_id: str):
 
     processed_count = 0
     for cand in candidates:
-        norm_skills = cand.normalized_skills or []
-        cand_skill_names = {s.get("canonical_skill", "").lower() for s in norm_skills}
-        matched_list = [r for r in required_skills if any(r.lower() in s for s in cand_skill_names)]
-        missing_list = [r for r in required_skills if r.lower() not in [m.lower() for m in matched_list]]
-        matched = len(matched_list)
-        skill_score = round((matched / len(req_lower)) * 100) if req_lower else 0
-
-        # Experience score
-        min_exp = criteria.get("min_experience", 0)
-        exp_years = float(cand.total_experience_years or 0)
-        experience_score = min(100, round((exp_years / max(min_exp, 1)) * 100)) if min_exp > 0 else 50
-
-        # Location score
-        preferred_locs = criteria.get("preferred_locations", [])
-        cand_location = (cand.location or "").lower()
-        location_score = 100 if not preferred_locs else (100 if any(l.lower() in cand_location for l in preferred_locs) else 30)
-
-        # Weighted overall score
-        weights = criteria.get("weights", {"skills": 0.5, "experience": 0.3, "location": 0.2})
-        score = round(
-            skill_score * weights.get("skills", 0.5) + 
-            experience_score * weights.get("experience", 0.3) + 
-            location_score * weights.get("location", 0.2)
+        match_res = calculate_match(
+            normalized_skills=cand.normalized_skills,
+            total_experience_years=cand.total_experience_years,
+            location=cand.location,
+            criteria=criteria,
+            parsing_method=cand.raw_resume_data.get("parsing_method", "llm") if isinstance(cand.raw_resume_data, dict) else "llm"
         )
-        score = min(100, score)
-        cand.match_score = score
-        cand.recommendation = "Strong" if score >= 70 else ("Moderate" if score >= 40 else "Weak")
-        cand.match_details = {
-            "match_score": score,
-            "skill_score": skill_score,
-            "experience_score": experience_score,
-            "location_score": location_score,
-            "matched_skills": matched_list,
-            "missing_skills": missing_list,
-            "matched_count": matched
-        }
-        if min_match_score > 0 and score < min_match_score:
+        cand.match_score = match_res["match_score"]
+        cand.recommendation = match_res["recommendation"]
+        cand.match_details = match_res["match_details"]
+        
+        if min_match_score > 0 and cand.match_score < min_match_score:
             cand.status = "rejected"
         
         cand.save()
@@ -684,5 +642,295 @@ def match_all_candidates(session_id: str, job_id: str):
     job.completed_at = datetime.now(timezone.utc)
     job.save()
 
+@celery_app.task(name="parse_seeker_resume")
+def parse_seeker_resume(seeker_id: str, file_path: str, file_name: str, file_size: int):
+    """
+    Asynchronously parse a job seeker's resume and update their account.
+    Also updates the status in Redis.
+    """
+    import os
+    import json
+    import logging
+    from datetime import datetime, timezone as dt_timezone
+    import redis
+    from asgiref.sync import async_to_sync
+    from api.models import JobSeekerAccount
+    from agents.parsing_agent import ResumeParsingAgent
+    from agents.normalization_agent import SkillNormalizationAgent
+
+    logger = logging.getLogger(__name__)
+    redis_client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+    redis_key = f"seeker:resume_parse_status:{seeker_id}"
+
+    def set_status(status_str, progress_int, error_str=None):
+        try:
+            status_data = {
+                "status": status_str,
+                "progress": progress_int,
+                "error": error_str,
+                "updated_at": datetime.now(dt_timezone.utc).isoformat() + "Z"
+            }
+            redis_client.set(redis_key, json.dumps(status_data), ex=3600)  # expires in 1 hour
+        except Exception as re_err:
+            logger.warning("Failed to write parser status to Redis: %s", re_err)
+
+    set_status("processing", 20)
+
+    try:
+        # Determine file extension
+        file_ext = file_name.split('.')[-1].lower()
+        if file_ext == "doc":
+            file_ext = "docx"
+        elif file_ext not in ["pdf", "docx", "txt"]:
+            file_ext = "txt"
+
+        set_status("processing", 40)
+
+        # Parse with ResumeParsingAgent
+        parser = ResumeParsingAgent()
+        parsed_response = async_to_sync(parser.parse)(file_path, file_ext)
+        parsed = parsed_response.get("parsed", {})
+
+        set_status("processing", 70)
+
+        # Normalize skills
+        raw_skills = parsed.get("skills", [])
+        try:
+            norm_agent = SkillNormalizationAgent()
+            normalized_skills = async_to_sync(norm_agent.normalize)(raw_skills)
+        except Exception as norm_err:
+            logger.warning("Skill normalization failed: %s", norm_err)
+            normalized_skills = raw_skills
+
+        set_status("processing", 90)
+
+        # Update JobSeekerAccount
+        seeker = JobSeekerAccount.objects.get(id=seeker_id)
+        
+        # Prepare resume_data schema matching what seeker expects
+        existing_resume = seeker.resume_data or {}
+        resume_data = {
+            "experience": parsed.get("experience", []),
+            "education": parsed.get("education", []),
+            "total_experience_years": parsed.get("total_experience_years", 0),
+            "open_to": existing_resume.get("open_to", {}) or existing_resume.get("openTo", {}),
+            "resume_file_name": file_name,
+            "resume_updated_at": datetime.utcnow().isoformat() + "Z",
+            "resume_size": round(file_size / 1024, 2),
+            "linkedin_url": parsed.get("linkedin_url"),
+            "github_url": parsed.get("github_url"),
+            "professional_summary": parsed.get("professional_summary")
+        }
+
+        seeker.resume_file_path = file_path
+        seeker.resume_data = resume_data
+        seeker.skills = normalized_skills
+
+        # Auto-fill/update personal fields if parsed
+        if parsed.get("name") and (not seeker.full_name or seeker.full_name.strip() in ["", "New User"]):
+            seeker.full_name = parsed["name"].strip()
+        if parsed.get("phone") and (not seeker.phone or seeker.phone.strip() == ""):
+            seeker.phone = parsed["phone"].strip()
+        if parsed.get("location") and (not seeker.location or seeker.location.strip() == ""):
+            seeker.location = parsed["location"].strip()
+        
+        # Headline extraction priority
+        if parsed.get("current_role"):
+            seeker.headline = parsed["current_role"].strip()
+        elif parsed.get("professional_summary"):
+            seeker.headline = parsed["professional_summary"][:255].strip()
+
+        seeker.save()
+        set_status("success", 100)
+        logger.info("Seeker %s resume parsed successfully", seeker_id)
+        
+    except Exception as e:
+        logger.error("Error in parse_seeker_resume task: %s", e)
+        set_status("failed", 100, error_str=str(e))
+        raise e
+
 # Celery app alias
 app = celery_app
+
+
+@celery_app.task(name="release_scheduled_results")
+def release_scheduled_results():
+    """
+    Sweeper task running periodically to release results whose scheduled dates have passed.
+    Checks JobApplication records and triggers notification/email if:
+      - The candidate's round status/action was finalized
+      - The round's result_announcement_date has passed
+      - The seeker has not yet been notified
+    """
+    import logging
+    from django.utils import timezone
+    from django.db import transaction
+    from api.models import JobApplication, Notification
+    from api.services.email_service import send_status_update_to_seeker
+    def _safe_int(val, default=1):
+        if val is None:
+            return default
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return default
+
+    def _parse_announcement_date(date_val):
+        if not date_val:
+            return None
+        from django.utils.dateparse import parse_datetime
+        from django.utils import timezone
+        from datetime import datetime
+        
+        # If already a datetime object
+        if isinstance(date_val, datetime):
+            if timezone.is_naive(date_val):
+                try:
+                    return timezone.make_aware(date_val, timezone.get_current_timezone())
+                except Exception:
+                    return None
+            return date_val
+            
+        # If it is a string
+        if isinstance(date_val, str):
+            try:
+                dt = parse_datetime(date_val)
+                if dt:
+                    if timezone.is_naive(dt):
+                        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+                    return dt
+            except Exception:
+                pass
+                
+        return None
+
+    logger = logging.getLogger(__name__)
+    now = timezone.now()
+    
+    # Fetch job applications that have candidates
+    apps = JobApplication.objects.filter(candidate__isnull=False).select_related('candidate', 'session', 'seeker')
+    
+    for app in apps:
+        try:
+            candidate = app.candidate
+            session = app.session
+            seeker = app.seeker
+            if not seeker or not session:
+                continue
+                
+            actual_round = _safe_int(candidate.current_round_index)
+            actual_status = candidate.status
+            rounds_sorted = sorted(session.rounds or [], key=lambda x: _safe_int(x.get("order", 1)))
+            
+            temp_status = "applied"
+            temp_visible_round = _safe_int(rounds_sorted[0].get("order", 1)) if rounds_sorted else 1
+            
+            for r in rounds_sorted:
+                r_order = _safe_int(r.get("order", 1))
+                r_date_str = r.get("result_announcement_date")
+                
+                r_date = _parse_announcement_date(r_date_str)
+                date_has_passed = not r_date or now >= r_date
+                
+                if r_order <= actual_round:
+                    if date_has_passed:
+                        if actual_round > r_order:
+                            temp_status = "shortlisted"
+                            next_rounds = [x for x in rounds_sorted if _safe_int(x.get("order", 1)) > r_order]
+                            if next_rounds:
+                                temp_visible_round = _safe_int(next_rounds[0].get("order", 1))
+                        else:
+                            if actual_status == "rejected":
+                                temp_status = "rejected"
+                                temp_visible_round = r_order
+                            elif actual_status == "hired":
+                                temp_status = "hired"
+                                temp_visible_round = r_order
+                            elif actual_status == "forwarded":
+                                temp_status = "shortlisted"
+                                temp_visible_round = r_order
+                            else:
+                                temp_status = "applied"
+                                temp_visible_round = r_order
+                    else:
+                        break
+                else:
+                    break
+            
+            # If the calculated visible state is different from the saved application state
+            if app.status != temp_status or app.last_notified_round_index != temp_visible_round:
+                with transaction.atomic():
+                    # lock the JobApplication row
+                    locked_app = JobApplication.objects.select_for_update().filter(id=app.id).first()
+                    if not locked_app or not locked_app.candidate:
+                        continue
+                    
+                    # check conditions again inside lock
+                    locked_cand = locked_app.candidate
+                    l_actual_round = _safe_int(locked_cand.current_round_index)
+                    l_actual_status = locked_cand.status
+                    
+                    l_temp_status = "applied"
+                    l_temp_visible_round = _safe_int(rounds_sorted[0].get("order", 1)) if rounds_sorted else 1
+                    
+                    for r in rounds_sorted:
+                        r_order = _safe_int(r.get("order", 1))
+                        r_date_str = r.get("result_announcement_date")
+                        
+                        r_date = _parse_announcement_date(r_date_str)
+                        date_has_passed = not r_date or now >= r_date
+                        
+                        if r_order <= l_actual_round:
+                            if date_has_passed:
+                                if l_actual_round > r_order:
+                                    l_temp_status = "shortlisted"
+                                    next_rounds = [x for x in rounds_sorted if _safe_int(x.get("order", 1)) > r_order]
+                                    if next_rounds:
+                                        l_temp_visible_round = _safe_int(next_rounds[0].get("order", 1))
+                                else:
+                                    if l_actual_status == "rejected":
+                                        l_temp_status = "rejected"
+                                        l_temp_visible_round = r_order
+                                    elif l_actual_status == "hired":
+                                        l_temp_status = "hired"
+                                        l_temp_visible_round = r_order
+                                    elif l_actual_status == "forwarded":
+                                        l_temp_status = "shortlisted"
+                                        l_temp_visible_round = r_order
+                                    else:
+                                        l_temp_status = "applied"
+                                        l_temp_visible_round = r_order
+                            else:
+                                break
+                        else:
+                            break
+                    
+                    if locked_app.status != l_temp_status or locked_app.last_notified_round_index != l_temp_visible_round:
+                        locked_app.status = l_temp_status
+                        locked_app.last_notified_round_index = l_temp_visible_round
+                        locked_app.save(update_fields=["status", "last_notified_round_index"])
+                        
+                        # Create Notification
+                        Notification.objects.create(
+                            seeker=seeker,
+                            type='status_updated',
+                            title=f'Application Update — {session.job_title}',
+                            message=f'Your application at {session.company.name if session.company else "Unknown Company"} has been updated to: {l_temp_status.title()}.',
+                            link='/applications',
+                        )
+                        
+                        # Send status email
+                        try:
+                            send_status_update_to_seeker(
+                                seeker_email=seeker.email,
+                                seeker_name=seeker.full_name,
+                                job_title=session.job_title,
+                                company_name=session.company.name if session.company else "Unknown Company",
+                                new_status=l_temp_status,
+                            )
+                        except Exception as email_err:
+                            logger.error("Email send failed inside celery release_scheduled_results: %s", email_err)
+                            
+        except Exception as app_err:
+            logger.error("Error processing scheduled result release for application %s: %s", app.id, app_err)
+

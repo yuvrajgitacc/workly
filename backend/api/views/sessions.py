@@ -1,15 +1,35 @@
 import json
+import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count
 from django.utils import timezone
 from asgiref.sync import async_to_sync
 
-from api.models import Company, Session, Candidate, IngestJob
+from api.models import Company, Session, Candidate, IngestJob, JobSeekerAccount, Notification
 from api.decorators import require_api_key, check_rate_limit
 from models.schemas import success_response, error_response
 from agents.inference_agent import SkillInferenceAgent
 from workers.celery_worker import match_all_candidates
+
+logger = logging.getLogger(__name__)
+
+def _get_skill_name(s):
+    if isinstance(s, dict):
+        return s.get("canonical_skill") or s.get("raw_skill") or ""
+    return str(s)
+
+
+def _run_task_safe(task, *args, **kwargs):
+    try:
+        task.delay(*args, **kwargs)
+    except Exception as e:
+        logger.warning("Celery dispatch failed for task %s, running synchronously: %s", getattr(task, '__name__', str(task)), e)
+        try:
+            task.apply(args=args, kwargs=kwargs)
+        except Exception as inner_err:
+            logger.error("Synchronous task execution failed: %s", inner_err)
+
 
 def _verify_session_ownership(session, company):
     if str(session.company_id) != str(company.id):
@@ -34,8 +54,25 @@ def session_root(request):
                 rounds_data.append({
                     "name": r.get("name"),
                     "interviewer": r.get("interviewer"),
-                    "order": r.get("order")
+                    "order": r.get("order"),
+                    "result_announcement_date": r.get("result_announcement_date")
                 })
+
+            location = data.get("location") or "Remote"
+            employment_type = data.get("employment_type") or "Full-time"
+            salary_range = data.get("salary_range") or "Competitive"
+            experience_level = data.get("experience_level") or "Mid-Level"
+            required_skills = data.get("required_skills") or []
+
+            # Setup default criteria
+            criteria = {
+                "required_skills": required_skills,
+                "nice_to_have": data.get("nice_to_have", []),
+                "preferred_locations": [location] if location != "Remote" else [],
+                "min_experience": data.get("min_experience", 0),
+                "min_match_score": data.get("min_match_score", 0),
+                "weights": data.get("weights", {"skills": 0.5, "experience": 0.3, "location": 0.2})
+            }
 
             new_session = Session.objects.create(
                 company=request.company,
@@ -43,8 +80,32 @@ def session_root(request):
                 job_title=job_title,
                 job_description=job_description,
                 rounds=rounds_data,
-                status="active"
+                status="active",
+                location=location,
+                employment_type=employment_type,
+                salary_range=salary_range,
+                experience_level=experience_level,
+                inferred_skills=required_skills,
+                criteria=criteria
             )
+
+            # Create matching notifications for job seekers
+            try:
+                seekers = JobSeekerAccount.objects.filter(is_active=True)
+                job_skills_lower = {str(_get_skill_name(s)).lower().strip() for s in required_skills if s}
+                for seeker in seekers:
+                    seeker_skills = seeker.skills or []
+                    seeker_skills_lower = {str(_get_skill_name(s)).lower().strip() for s in seeker_skills if s}
+                    if seeker_skills_lower & job_skills_lower:
+                        Notification.objects.create(
+                            seeker=seeker,
+                            type="new_match",
+                            title=f"New job match: {new_session.job_title} at {new_session.company.name if new_session.company else 'Unknown Company'}",
+                            message=f"A new role matching your skills has been posted: {new_session.job_title} at {new_session.company.name if new_session.company else 'Unknown Company'}.",
+                            link=f"/jobs/{new_session.id}"
+                        )
+            except Exception as notify_err:
+                logger.warning("Failed to create match notifications: %s", notify_err)
 
             return JsonResponse(success_response({
                 "id": str(new_session.id),
@@ -53,6 +114,11 @@ def session_root(request):
                 "job_description": new_session.job_description,
                 "rounds": new_session.rounds,
                 "status": new_session.status,
+                "location": new_session.location,
+                "employment_type": new_session.employment_type,
+                "salary_range": new_session.salary_range,
+                "experience_level": new_session.experience_level,
+                "inferred_skills": new_session.inferred_skills,
                 "created_at": new_session.created_at.isoformat() if new_session.created_at else None
             }))
         except Exception as e:
@@ -89,6 +155,11 @@ def session_root(request):
                     "total_candidates": sum(status_counts.values()),
                     "hired": status_counts.get("hired", 0),
                     "rejected": status_counts.get("rejected", 0),
+                    "location": s.location,
+                    "employment_type": s.employment_type,
+                    "salary_range": s.salary_range,
+                    "experience_level": s.experience_level,
+                    "inferred_skills": s.inferred_skills,
                     "created_at": s.created_at.isoformat() if s.created_at else None,
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None
                 })
@@ -144,6 +215,10 @@ def session_detail(request, session_id):
                 "total_hired": total_hired,
                 "total_rejected": total_rejected,
                 "gmail_address": session.gmail_address,
+                "location": session.location,
+                "employment_type": session.employment_type,
+                "salary_range": session.salary_range,
+                "experience_level": session.experience_level,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "updated_at": session.updated_at.isoformat() if session.updated_at else None
             }))
@@ -160,10 +235,19 @@ def session_detail(request, session_id):
                 session.rounds = [{
                     "name": r.get("name"),
                     "interviewer": r.get("interviewer"),
-                    "order": r.get("order")
+                    "order": r.get("order"),
+                    "result_announcement_date": r.get("result_announcement_date")
                 } for r in data["rounds"]]
             if "status" in data and data["status"] is not None:
                 session.status = data["status"]
+            if "location" in data and data["location"] is not None:
+                session.location = data["location"]
+            if "employment_type" in data and data["employment_type"] is not None:
+                session.employment_type = data["employment_type"]
+            if "salary_range" in data and data["salary_range"] is not None:
+                session.salary_range = data["salary_range"]
+            if "experience_level" in data and data["experience_level"] is not None:
+                session.experience_level = data["experience_level"]
 
             session.updated_at = timezone.now()
             session.save()
@@ -247,7 +331,7 @@ def set_criteria(request, session_id):
                 total_files=candidate_count
             )
 
-            match_all_candidates.delay(str(session.id), str(job.id))
+            _run_task_safe(match_all_candidates, str(session.id), str(job.id))
 
             return JsonResponse(success_response({
                 "updated": True,
@@ -285,6 +369,17 @@ def infer_skills(request, session_id):
         result = async_to_sync(agent.infer_from_jd)(job_description)
 
         session.inferred_skills = result
+        if result.get("salary_range"):
+            session.salary_range = result.get("salary_range")
+        if result.get("preferred_locations"):
+            locs = result.get("preferred_locations")
+            if locs and len(locs) > 0:
+                session.location = locs[0]
+        if result.get("employment_type"):
+            session.employment_type = result.get("employment_type")
+        if result.get("seniority_level"):
+            session.experience_level = result.get("seniority_level").capitalize() + " Level"
+
         session.updated_at = timezone.now()
         session.save()
 
@@ -314,8 +409,177 @@ def trigger_match_all(request, session_id):
             status="pending"
         )
 
-        match_all_candidates.delay(str(session.id), str(job.id))
+        _run_task_safe(match_all_candidates, str(session.id), str(job.id))
 
         return JsonResponse(success_response({"job_id": str(job.id), "status": "pending"}))
+    except Exception as e:
+        return JsonResponse(error_response(f"Server error: {str(e)}"), status=500)
+
+
+@csrf_exempt
+@require_api_key
+def session_analytics(request, session_id):
+    """GET /api/v1/sessions/<session_id>/analytics"""
+    if request.method != "GET":
+        return JsonResponse(error_response("Method not allowed"), status=405)
+    try:
+        session = Session.objects.filter(id=session_id).first()
+        if not session:
+            return JsonResponse(error_response("Session not found"), status=404)
+        
+        try:
+            _verify_session_ownership(session, request.company)
+        except PermissionError:
+            return JsonResponse(error_response("Access denied"), status=403)
+
+        candidates = Candidate.objects.filter(session_id=session_id)
+        total_applicants = candidates.count()
+        
+        # Sources split
+        portal_count = candidates.filter(application_source="portal").count()
+        manual_count = candidates.filter(application_source="manual").count()
+        
+        # Avg match score
+        from django.db.models import Avg
+        avg_score_res = candidates.aggregate(Avg('match_score'))
+        avg_match_score = round(avg_score_res['match_score__avg'] or 0, 1)
+
+        # Funnel stage counts
+        rounds = session.rounds or []
+        funnel = []
+        for r in sorted(rounds, key=lambda x: x.get("order", 1)):
+            order = r.get("order", 1)
+            name = r.get("name", f"Round {order}")
+            
+            # Active in this round
+            active_count = candidates.filter(current_round_index=order).exclude(status__in=["rejected", "hired"]).count()
+            if order == 1:
+                active_count += candidates.filter(current_round_index=0).exclude(status__in=["rejected", "hired"]).count()
+            
+            rejected_count = candidates.filter(current_round_index=order, status="rejected").count()
+            hired_count = candidates.filter(current_round_index=order, status="hired").count()
+            reached_count = candidates.filter(current_round_index__gte=order).count()
+            
+            funnel.append({
+                "round_index": order,
+                "name": name,
+                "active": active_count,
+                "rejected": rejected_count,
+                "hired": hired_count,
+                "reached": reached_count
+            })
+
+        hired_total = candidates.filter(status="hired").count()
+        rejected_total = candidates.filter(status="rejected").count()
+        
+        return JsonResponse(success_response({
+            "total_applicants": total_applicants,
+            "sources": {
+                "portal": portal_count,
+                "manual": manual_count
+            },
+            "avg_match_score": avg_match_score,
+            "hired_count": hired_total,
+            "rejected_count": rejected_total,
+            "funnel": funnel
+        }))
+    except Exception as e:
+        return JsonResponse(error_response(f"Server error: {str(e)}"), status=500)
+
+
+@csrf_exempt
+@require_api_key
+def session_applicants(request, session_id):
+    """GET /api/v1/sessions/<session_id>/applicants"""
+    if request.method != "GET":
+        return JsonResponse(error_response("Method not allowed"), status=405)
+    try:
+        session = Session.objects.filter(id=session_id).first()
+        if not session:
+            return JsonResponse(error_response("Session not found"), status=404)
+        
+        try:
+            _verify_session_ownership(session, request.company)
+        except PermissionError:
+            return JsonResponse(error_response("Access denied"), status=403)
+
+        query = Candidate.objects.filter(session_id=session_id)
+
+        # Filters
+        search = request.GET.get("search", "").strip()
+        source = request.GET.get("source", "").strip()
+        status = request.GET.get("status", "").strip()
+        sort_by = request.GET.get("sort_by", "created_at").strip()
+        sort_order = request.GET.get("sort_order", "desc").strip()
+        
+        if search:
+            from django.db.models import Q
+            query = query.filter(Q(name__icontains=search) | Q(email__icontains=search))
+        if source:
+            query = query.filter(application_source=source)
+        if status:
+            query = query.filter(status=status)
+
+        # Sort order
+        if sort_by not in ["match_score", "name", "created_at"]:
+            sort_by = "created_at"
+        
+        if sort_order == "asc":
+            query = query.order_by(sort_by)
+        else:
+            query = query.order_by(f"-{sort_by}")
+
+        page_val = request.GET.get("page", "1")
+        if page_val.lower() == "all":
+            candidates_list = query
+            page = 1
+            per_page = query.count()
+            total = per_page
+            pages = 1
+        else:
+            try:
+                page = int(page_val)
+            except ValueError:
+                page = 1
+            try:
+                per_page = int(request.GET.get("per_page", 20))
+            except ValueError:
+                per_page = 20
+
+            total = query.count()
+            pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+            offset = (page - 1) * per_page
+            candidates_list = query[offset:offset+per_page]
+
+        rounds = session.rounds or []
+        rounds_map = {r.get("order", 1): r.get("name", f"Round {r.get('order')}") for r in rounds}
+
+        data = []
+        for c in candidates_list:
+            current_round_name = rounds_map.get(c.current_round_index, f"Round {c.current_round_index}")
+            if c.current_round_index == 0:
+                current_round_name = rounds_map.get(1, "Round 1")
+                
+            data.append({
+                "id": str(c.id),
+                "name": c.name,
+                "email": c.email,
+                "phone": c.phone,
+                "location": c.location,
+                "match_score": c.match_score,
+                "current_round_index": c.current_round_index,
+                "current_round_name": current_round_name,
+                "status": c.status,
+                "application_source": c.application_source,
+                "created_at": c.created_at.isoformat() if c.created_at else None
+            })
+
+        return JsonResponse(success_response({
+            "applicants": data,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": pages
+        }))
     except Exception as e:
         return JsonResponse(error_response(f"Server error: {str(e)}"), status=500)

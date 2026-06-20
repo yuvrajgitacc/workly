@@ -3,6 +3,7 @@ import { seekerAPI } from '../../lib/api';
 import ApplicationStatusChip from '../../components/ApplicationStatusChip';
 import { ClipboardList, Briefcase, Calendar } from 'lucide-react';
 import JobsNavbar from '../../components/JobsNavbar';
+import { CompanyLogo } from '../../components/user/company-logo';
 
 export default function MyApplicationsPage() {
   const [apps, setApps] = useState([]);
@@ -62,7 +63,7 @@ export default function MyApplicationsPage() {
           {filtered.map(app => (
             <div key={app.id} style={styles.card}>
               <div style={styles.cardLeft}>
-                <div style={styles.avatar}>{app.company_name?.[0]?.toUpperCase() || 'C'}</div>
+                <CompanyLogo name={app.company_name} logoPath={app.company_logo_path} size={42} />
                 <div>
                   <div style={styles.jobTitle}>{app.job_title}</div>
                   <div style={styles.companyName}>

@@ -3,10 +3,47 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, LogOut, Upload, Briefcase, TrendingUp, FolderGit, Home, Shield, Bell, Sparkles, LayoutDashboard } from 'lucide-react';
 
+const googleColors = [
+  '#1a73e8', // Google Blue
+  '#ea4335', // Google Red
+  '#f9ab00', // Google Yellow
+  '#34a853', // Google Green
+  '#673ab7', // Google Purple
+  '#00acc1', // Google Cyan
+  '#f4511e', // Google Orange
+];
+
+const getGoogleColor = (str) => {
+  if (!str) return '#1a73e8';
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % googleColors.length;
+  return googleColors[idx];
+};
+
 export default function JobsNavbar({ onUploadClick }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(() => {
+    const seekerData = localStorage.getItem('vish_seeker_data');
+    if (seekerData) {
+      try {
+        const parsed = JSON.parse(seekerData);
+        return {
+          name: parsed.full_name,
+          email: parsed.email,
+          skills: parsed.skills || []
+        };
+      } catch (e) {}
+    }
+    const saved = localStorage.getItem('vish_seeker_profile');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return null;
+  });
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const isSeekerLoggedIn = !!localStorage.getItem('vish_seeker_token');
 
@@ -181,7 +218,10 @@ export default function JobsNavbar({ onUploadClick }) {
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="flex items-center space-x-2 border border-[#e6dfcd] hover:border-[#2563EB] rounded-full px-4 py-2 text-sm font-medium text-[#2A2A2A] transition-colors"
             >
-              <div className="w-6 h-6 bg-[#2563EB] text-white rounded-full flex items-center justify-center text-xs font-bold capitalize">
+              <div 
+                className="w-6 h-6 text-white rounded-full flex items-center justify-center text-xs font-bold capitalize"
+                style={{ backgroundColor: getGoogleColor(profile.name) }}
+              >
                 {profile.name ? profile.name[0] : 'U'}
               </div>
               <span className="max-w-[120px] truncate">

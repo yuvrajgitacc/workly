@@ -59,6 +59,8 @@ urlpatterns = [
     path('api/v1/sessions/<str:session_id>/infer-skills', sessions.infer_skills, name='sessions-infer-skills'),
     # Frontend calls: POST /sessions/{id}/match-all
     path('api/v1/sessions/<str:session_id>/match-all', sessions.trigger_match_all, name='sessions-match-all'),
+    path('api/v1/sessions/<str:session_id>/analytics', sessions.session_analytics, name='sessions-analytics'),
+    path('api/v1/sessions/<str:session_id>/applicants', sessions.session_applicants, name='sessions-applicants'),
 
     # ── Candidates ─────────────────────────────────────────────────────────────
     path('api/v1/sessions/<str:session_id>/candidates',
@@ -141,6 +143,10 @@ urlpatterns = [
     path('api/v1/public/jobs/<str:session_id>/apply', jobs.apply_public_job, name='public-jobs-apply'),
     path('api/v1/public/jobs/<str:session_id>/safety-check', jobs.scan_job_safety_public, name='public-jobs-safety-check'),
 
+    # ── Public Company Browse (no auth required) ──────────────────────────────
+    path('api/v1/public/companies', seeker_jobs.public_list_companies, name='public-companies-list'),
+    path('api/v1/public/companies/<str:company_id>', seeker_jobs.public_company_detail, name='public-company-detail'),
+
     # ── Protection & Fraud Detection ──────────────────────────────────────────
     path('api/v1/protection/scan', protection.scan_portfolio, name='protection-scan'),
     path('api/v1/protection/history', protection.get_scan_history, name='protection-history'),
@@ -152,15 +158,22 @@ urlpatterns = [
     path('api/v1/seeker/auth/profile', seeker_auth.update_profile, name='seeker-auth-profile'),
 
     # ── Job Seeker Resume ──────────────────────────────────────────────────────
+    path('api/v1/public/parse-resume', seeker_resume.public_parse_resume, name='public-resume-parse'),
     path('api/v1/seeker/resume', seeker_resume.get_resume, name='seeker-resume-get'),
     path('api/v1/seeker/resume/upload', seeker_resume.upload_resume, name='seeker-resume-upload'),
+    path('api/v1/seeker/resume/parse-status', seeker_resume.get_parse_status, name='seeker-resume-parse-status'),
     path('api/v1/seeker/resume/enhance', seeker_resume.enhance_resume, name='seeker-resume-enhance'),
 
     # ── Job Seeker Jobs & Applications ─────────────────────────────────────────
     path('api/v1/seeker/jobs', seeker_jobs.list_jobs, name='seeker-jobs-list'),
+    path('api/v1/seeker/jobs/saved', seeker_jobs.get_saved_jobs, name='seeker-jobs-saved'),
     path('api/v1/seeker/jobs/<str:session_id>', seeker_jobs.job_detail, name='seeker-jobs-detail'),
+    path('api/v1/seeker/jobs/<str:session_id>/save', seeker_jobs.save_job, name='seeker-job-save'),
     path('api/v1/seeker/jobs/<str:session_id>/apply', seeker_jobs.apply_job, name='seeker-jobs-apply'),
     path('api/v1/seeker/applications', seeker_jobs.my_applications, name='seeker-applications'),
+    path('api/v1/seeker/companies', seeker_jobs.list_companies, name='seeker-companies-list'),
+    path('api/v1/seeker/companies/<str:company_id>', seeker_jobs.company_detail, name='seeker-company-detail'),
+    path('api/v1/seeker/companies/<str:company_id>/follow', seeker_jobs.follow_company, name='seeker-company-follow'),
 
     # ── Job Seeker Notifications ───────────────────────────────────────────────
     path('api/v1/seeker/notifications', seeker_jobs.get_notifications, name='seeker-notifications'),

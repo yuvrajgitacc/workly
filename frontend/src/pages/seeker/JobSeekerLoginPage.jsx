@@ -19,7 +19,7 @@ export default function JobSeekerLoginPage() {
       localStorage.setItem('vish_seeker_token', data.seeker_token);
       localStorage.setItem('vish_seeker_data', JSON.stringify(data.seeker));
       toast.success(`Welcome back, ${data.seeker.full_name}!`);
-      navigate('/jobs/dashboard');
+      navigate('/dashboard');
     } catch (err) {
       toast.error(err.message || 'Login failed');
     } finally {
