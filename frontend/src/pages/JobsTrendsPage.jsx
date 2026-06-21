@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, AreaChart, Area, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, Briefcase, DollarSign, Globe, Award, Sparkles } from 'lucide-react';
-import JobsNavbar from '../components/JobsNavbar';
-import ResumeUploadModal from '../components/ResumeUploadModal';
+import { Header, Footer } from '../components/user/site-chrome';
 
 const salaryTimeline = [
   { year: '2023', salary: 112 },
@@ -20,11 +19,9 @@ const regionDistribution = [
 ];
 
 export default function JobsTrendsPage() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
   return (
     <div className="min-h-screen bg-[#f5f4ef] text-[#2A2A2A] font-sans flex flex-col">
-      <JobsNavbar onUploadClick={() => setIsModalOpen(true)} />
+      <Header />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-8">
         
@@ -176,11 +173,7 @@ export default function JobsTrendsPage() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full bg-[#FFFFFF] border-t border-[#e6dfcd] px-6 py-8 mt-12 text-center text-xs text-[#5c5c5c]">
-        &copy; {new Date().getFullYear()} Vishleshan Job Engine. Built for recruitment intelligence and career path mapping.
-      </footer>
-
-      <ResumeUploadModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <Footer />
     </div>
   );
 }

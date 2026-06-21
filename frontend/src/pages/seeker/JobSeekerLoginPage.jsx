@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { seekerAPI } from '../../lib/api';
 import { useSeekerAuthStore } from '../../stores/seekerAuthStore';
@@ -9,6 +9,38 @@ export default function JobSeekerLoginPage() {
   const setAuth = useSeekerAuthStore(s => s.setAuth);
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const googleClientRef = useRef(null);
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google) {
+        googleClientRef.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+          scope: "openid email profile",
+          callback: async (tokenResponse) => {
+            if (tokenResponse && tokenResponse.access_token) {
+              setLoading(true);
+              try {
+                const data = await seekerAPI.googleLogin(tokenResponse.access_token);
+                setAuth(data);
+                toast.success(`Welcome, ${data.seeker.full_name}!`);
+                navigate('/dashboard');
+              } catch (err) {
+                toast.error(err.message || 'Google login failed');
+              } finally {
+                setLoading(false);
+              }
+            }
+          }
+        });
+      }
+    };
+    document.body.appendChild(script);
+  }, [navigate, setAuth]);
 
   const handle = async (e) => {
     e.preventDefault();
@@ -84,6 +116,49 @@ export default function JobSeekerLoginPage() {
             </button>
           </form>
 
+          <div style={styles.orDivider}>
+            <div style={styles.orLine}></div>
+            <span style={styles.orText}>or</span>
+            <div style={styles.orLine}></div>
+          </div>
+
+          <button 
+            type="button" 
+            disabled={loading}
+            onClick={() => {
+              if (googleClientRef.current) {
+                googleClientRef.current.requestAccessToken();
+              } else {
+                toast.error("Google Auth is loading. Please try again in a moment.");
+              }
+            }}
+            style={styles.ssoBtn}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M21.35,11.1H12v2.7h5.38C17,14.93,15.76,15.9,14.15,16.5l2.2,2.2c2.6-2.4,4.1-5.9,4.1-10C22.45,12.3,22,11.6,21.35,11.1z" fill="#4285F4" />
+              <path d="M12,20.45c2.6,0,4.8-.85,6.4-2.3l-2.2-2.2c-.85.6-2,1-3.3,1c-3.15,0-5.8-2.15-6.75-5.05L3.9,13.9A10.45,10.45,0,0,0,12,20.45z" fill="#34A853" />
+              <path d="M5.25,12.1a6.4,6.4,0,0,1,0-3.8L3.05,6A10.45,10.45,0,0,0,3.05,16.2z" fill="#FBBC05" />
+              <path d="M12,5.25c1.8,0,3.2.6,4.05,1.4l2-2A10.35,10.35,0,0,0,12,1.55a10.45,10.45,0,0,0-8.1,4.45L6.1,8.1C7.05,5.2,9.7,3.15,12,5.25z" fill="#EA4335" />
+            </svg>
+            Sign In with Google
+          </button>
+
+          <button 
+            type="button" 
+            disabled={loading}
+            onClick={() => {
+              const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
+              const redirectUri = encodeURIComponent(import.meta.env.VITE_GITHUB_REDIRECT_URI);
+              window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=read:user,user:email&state=seeker`;
+            }}
+            style={styles.ssoBtn}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.867 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.164 22 16.418 22 12c0-5.523-4.523-10-10-10z"/>
+            </svg>
+            Sign In with GitHub
+          </button>
+
           <div style={styles.divider}><span>New to Vishleshan?</span></div>
           <Link to="/jobs/register" style={styles.registerLink}>Create an account →</Link>
 
@@ -154,5 +229,22 @@ const styles = {
   companyLink: {
     textAlign: 'center', fontSize: '12px', color: '#9ca3af',
     marginTop: '20px',
+  },
+  orDivider: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    margin: '16px 0', width: '100%',
+  },
+  orLine: {
+    flex: 1, height: '1px', backgroundColor: '#e5e7eb',
+  },
+  orText: {
+    padding: '0 12px', fontSize: '12px', color: '#9ca3af', fontWeight: 600,
+    textTransform: 'uppercase', letterSpacing: '0.05em',
+  },
+  ssoBtn: {
+    width: '100%', padding: '12px', backgroundColor: '#fff', border: '1.5px solid #e5e7eb',
+    borderRadius: '12px', fontSize: '14px', fontWeight: 700, color: '#374151',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    gap: '10px', marginTop: '10px', transition: 'all 0.2s', fontFamily: 'inherit',
   },
 };

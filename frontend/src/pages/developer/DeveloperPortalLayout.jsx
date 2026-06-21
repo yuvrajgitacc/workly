@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { LayoutDashboard, Key, BarChart2, Webhook, Code, CreditCard, BookOpen, Settings, LogOut, Menu, X } from "lucide-react";
 import { usePortalAuthStore } from "../../stores/portalAuthStore";
+import { portalAuth } from "../../lib/portalApi";
 import { motion } from "framer-motion";
 import UsageProgress from "../../components/developer/UsageProgress";
 
@@ -15,7 +16,7 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function DeveloperPortalLayout() {
-  const { jwt, developer, company_name, initFromStorage, clearAuth } = usePortalAuthStore();
+  const { jwt, developer, company_name, initFromStorage, clearAuth, setAuth } = usePortalAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -25,10 +26,24 @@ export default function DeveloperPortalLayout() {
   useEffect(() => {
     initFromStorage();
     setMounted(true);
-    if (!usePortalAuthStore.getState().jwt) {
+    const token = usePortalAuthStore.getState().jwt || localStorage.getItem("portal_jwt");
+    if (!token) {
       navigate("/developer/login");
+      return;
     }
-  }, [initFromStorage, navigate]);
+
+    // Refresh profile on layout mount
+    portalAuth.getMe()
+      .then((meData) => {
+        setAuth(meData);
+      })
+      .catch((err) => {
+        console.error("Failed to sync developer info:", err);
+        if (err.message === "Session expired" || err.message === "Unauthorized") {
+          clearAuth();
+        }
+      });
+  }, [initFromStorage, navigate, setAuth, clearAuth]);
 
   if (!mounted || !jwt) return null;
 
@@ -47,7 +62,7 @@ export default function DeveloperPortalLayout() {
   ];
 
   return (
-    <div className="flex h-screen bg-bg overflow-hidden font-sans text-charcoal">
+    <div className="flex h-screen bg-bg overflow-hidden font-sans text-charcoal" style={{ '--accent': '#2563eb', '--accent-foreground': '#ffffff', '--accent-light': '#EFF6FF' }}>
       
       {/* Mobile Toggle */}
       <div className="md:hidden fixed top-0 w-full bg-white border-b z-50 p-4 flex justify-between items-center text-charcoal shadow-sm">
@@ -80,10 +95,10 @@ export default function DeveloperPortalLayout() {
                   key={item.href}
                   onClick={() => { navigate(item.href); setMobileMenu(false); }}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold transition-all text-left ${
-                    isActive ? "bg-accent/10 border border-accent/20 text-accent" : "text-gray-850 hover:bg-gray-50 hover:text-black"
+                    isActive ? "bg-gray-100 border border-gray-200 text-black" : "text-gray-850 hover:bg-gray-50 hover:text-black"
                   }`}
                 >
-                  <Icon size={18} className={isActive ? "text-accent stroke-[2.5]" : "text-gray-700"} />
+                  <Icon size={18} className={isActive ? "text-black stroke-[2.5]" : "text-gray-700"} />
                   {item.name}
                 </button>
               )
@@ -99,10 +114,10 @@ export default function DeveloperPortalLayout() {
                   key={item.href}
                   onClick={() => { navigate(item.href); setMobileMenu(false); }}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold transition-all text-left ${
-                    isActive ? "bg-accent/10 text-accent" : "text-gray-850 hover:bg-gray-50 hover:text-black"
+                    isActive ? "bg-gray-100 text-black" : "text-gray-850 hover:bg-gray-50 hover:text-black"
                   }`}
                 >
-                  <Icon size={18} className={isActive ? "text-accent" : "text-gray-700"} />
+                  <Icon size={18} className={isActive ? "text-black" : "text-gray-700"} />
                   {item.name}
                 </button>
               )
@@ -134,7 +149,7 @@ export default function DeveloperPortalLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 h-full overflow-y-auto bg-[#F5F0E8] md:mt-0 mt-16 md:p-8 p-4 relative z-0 hide-scrollbar">
+      <main className="flex-1 h-full overflow-y-auto bg-white md:mt-0 mt-16 md:p-8 p-4 relative z-0 hide-scrollbar">
           <ErrorBoundary>
               <motion.div key={pathname} initial={{opacity:0}} animate={{opacity:1}} transition={{duration:0.08}} className="w-full h-full">
                 <Outlet />

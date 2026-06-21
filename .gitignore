@@ -60,3 +60,5 @@ backend/env
 backend/dump.rdb
 dump.rdb
 backend/redis_bin/
+backend/workly_data.json
+

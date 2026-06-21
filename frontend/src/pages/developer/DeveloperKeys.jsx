@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { portalKeys } from "../../lib/portalApi";
+import { portalKeys, portalAuth } from "../../lib/portalApi";
 import { usePortalAuthStore } from "../../stores/portalAuthStore";
 import { 
   Plus, 
@@ -110,8 +110,8 @@ function DeveloperKeyRow({ apiKey, onUpdate }) {
                 {apiKey.environment || 'production'}
               </span>
             </div>
-            <div className="text-[11px] text-gray-800 font-mono mt-0.5 tracking-tight font-bold">
-              {apiKey.public_key ? `${apiKey.public_key.slice(0, 16)}••••••••${apiKey.public_key.slice(-4)}` : 'Hidden'}
+            <div className="text-[11px] text-gray-800 font-mono mt-0.5 tracking-tight font-bold select-all">
+              {apiKey.public_key || 'Hidden'}
             </div>
           </div>
         </div>
@@ -122,6 +122,13 @@ function DeveloperKeyRow({ apiKey, onUpdate }) {
           </span>
 
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => handleCopy(apiKey.secret_key || "", 'secret')}
+              className="p-1.5 text-gray-600 hover:text-accent hover:bg-blue-50 rounded-lg transition-colors"
+              title="Copy secret key"
+            >
+              {copiedType === 'secret' ? <Check size={14} className="text-green-500" /> : <Key size={14} />}
+            </button>
             <button 
               onClick={() => handleCopy(apiKey.public_key || "", 'masked')}
               className="p-1.5 text-gray-600 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors"
@@ -161,17 +168,16 @@ function DeveloperKeyRow({ apiKey, onUpdate }) {
                    readOnly 
                    className="text-xs flex-1 text-black font-mono bg-transparent outline-none truncate font-extrabold" 
                  />
-                 <button type="button" onClick={() => setShowSecret(!showSecret)} className="text-gray-500 hover:text-charcoal shrink-0 mr-1">
+                 <button type="button" onClick={() => setShowSecret(!showSecret)} className="text-gray-500 hover:text-charcoal shrink-0 mr-1" title={showSecret ? 'Hide secret key' : 'Reveal secret key'}>
                    {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
                  </button>
-                 {showSecret && (
-                   <button 
-                     onClick={() => handleCopy(apiKey.secret_key || "", 'secret')} 
-                     className="text-gray-500 hover:text-accent shrink-0"
-                   >
-                     {copiedType === 'secret' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-                   </button>
-                 )}
+                 <button 
+                   onClick={() => handleCopy(apiKey.secret_key || "", 'secret')} 
+                   className="text-gray-500 hover:text-accent shrink-0"
+                   title="Copy secret key"
+                 >
+                   {copiedType === 'secret' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                 </button>
                </div>
             </div>
 
@@ -268,17 +274,29 @@ export default function DeveloperKeys({ defaultTab }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const { company_name, developer } = usePortalAuthStore();
+  const { company_name, developer, setAuth } = usePortalAuthStore();
   
   // Profile state
-  const [profile, setProfile] = useState({ name: company_name || "", website: "" });
+  const [profile, setProfile] = useState({ name: company_name || "", website: developer?.website_url || "" });
   
   // Passwords state
   const [passwords, setPasswords] = useState({ current: "", newPass: "", confirm: "" });
   
   // CORS Domains state
-  const [domains, setDomains] = useState(["hrms.yourcompany.com"]);
+  const [domains, setDomains] = useState(developer?.allowed_domains || ["hrms.yourcompany.com"]);
   const [newDomain, setNewDomain] = useState("");
+
+  useEffect(() => {
+    if (developer) {
+      setProfile({
+        name: developer.company_name || company_name || "",
+        website: developer.website_url || ""
+      });
+      if (developer.allowed_domains) {
+        setDomains(developer.allowed_domains);
+      }
+    }
+  }, [developer, company_name]);
 
   const { data: keys, refetch, isLoading } = useQuery({
     queryKey: ["portal-keys"],
@@ -303,9 +321,18 @@ export default function DeveloperKeys({ defaultTab }) {
     }
   };
 
-  const handleProfileSave = (e) => {
+  const handleProfileSave = async (e) => {
     e.preventDefault();
-    toast.success("Profile updated");
+    try {
+      const data = await portalAuth.updateProfile({
+        company_name: profile.name,
+        website_url: profile.website
+      });
+      setAuth({ company_name: data.company_name, website_url: data.website_url });
+      toast.success("Profile updated");
+    } catch (err) {
+      toast.error(err.message || "Failed to update profile");
+    }
   };
 
   const handlePasswordSave = (e) => {
@@ -315,12 +342,37 @@ export default function DeveloperKeys({ defaultTab }) {
     setPasswords({ current: "", newPass: "", confirm: "" });
   };
 
-  const addDomain = (e) => {
+  const updateDomains = async (newDomainsList) => {
+    try {
+      const data = await portalAuth.updateProfile({
+        allowed_domains: newDomainsList
+      });
+      setAuth({ allowed_domains: data.allowed_domains });
+      setDomains(data.allowed_domains);
+      return true;
+    } catch (err) {
+      toast.error(err.message || "Failed to update allowed domains");
+      return false;
+    }
+  };
+
+  const addDomain = async (e) => {
     e.preventDefault();
     if(newDomain && !domains.includes(newDomain)) {
-       setDomains([...domains, newDomain]);
-       setNewDomain("");
-       toast.success("Domain added");
+       const updated = [...domains, newDomain];
+       const ok = await updateDomains(updated);
+       if (ok) {
+         setNewDomain("");
+         toast.success("Domain added");
+       }
+    }
+  };
+
+  const removeDomain = async (d) => {
+    const updated = domains.filter(x => x !== d);
+    const ok = await updateDomains(updated);
+    if (ok) {
+       toast.success("Domain removed");
     }
   };
 
@@ -505,7 +557,7 @@ const data = await response.json();`
                       <button 
                        key={tab} 
                        onClick={() => setActiveCodeTab(tab)}
-                       className={`px-6 py-3 text-xs font-bold transition-colors ${activeCodeTab === tab ? 'text-accent border-b-2 border-accent bg-[#1E1E1E]' : 'text-gray-300 hover:text-white'}`}
+                       className={`px-6 py-3 text-xs font-bold transition-colors ${activeCodeTab === tab ? 'text-white border-b-2 border-white bg-[#1E1E1E]' : 'text-gray-300 hover:text-white'}`}
                       >
                         {tab}
                       </button>
@@ -578,7 +630,7 @@ const data = await response.json();`
                    {domains.map(d => (
                       <div key={d} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs font-bold text-gray-800">
                         {d}
-                        <button type="button" onClick={() => setDomains(domains.filter(x => x!==d))} className="text-gray-500 hover:text-red-500 transition-colors ml-1"><X size={14}/></button>
+                        <button type="button" onClick={() => removeDomain(d)} className="text-gray-500 hover:text-red-500 transition-colors ml-1"><X size={14}/></button>
                       </div>
                    ))}
                    {domains.length === 0 && <span className="text-sm text-gray-900 font-bold italic py-1.5">No domains configured.</span>}

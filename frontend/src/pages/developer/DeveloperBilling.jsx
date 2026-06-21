@@ -44,12 +44,32 @@ export default function DeveloperBilling() {
     setLoadingPlan(planId);
     try {
       const orderData = await portalBilling.subscribe(planId);
+      if (orderData.order_id.startsWith("order_mock_")) {
+         setTimeout(async () => {
+           try {
+             await portalBilling.verifyPayment({
+               razorpay_payment_id: "pay_mock_" + Math.random().toString(36).substring(7),
+               razorpay_order_id: orderData.order_id,
+               razorpay_signature: "sig_mock_" + Math.random().toString(36).substring(7),
+               plan: planId
+             });
+             toast.success("Successfully upgraded plan (Mock Mode)!");
+             setAuth({ ...usePortalAuthStore.getState().developer, tier: planId });
+             window.location.reload();
+           } catch (err) {
+             toast.error("Mock upgrade verification failed");
+             setLoadingPlan(null);
+           }
+         }, 1000);
+         return;
+      }
+
       const rzp = new window.Razorpay({
         key: orderData.razorpay_key_id || "rzp_test_mock",
         order_id: orderData.order_id,
         name: "Vishleshan",
         description: `Upgrade to ${plans.find(p=>p.id===planId).name} Plan`,
-        theme: { color: "#2563EB" },
+        theme: { color: "#111111" },
         handler: async function(response) {
           try {
             await portalBilling.verifyPayment({
@@ -131,7 +151,7 @@ export default function DeveloperBilling() {
                 
                 <div className="flex justify-between items-center mb-4">
                   <h3 className={`text-xl font-bold uppercase tracking-tight ${isActive ? "text-accent-dark" : "text-charcoal"}`}>{p.name}</h3>
-                  {isActive && <span className="bg-blue-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded-full">Current</span>}
+                  {isActive && <span className="bg-gray-100 text-gray-700 text-[10px] font-black uppercase px-2 py-1 rounded-full">Current</span>}
                 </div>
                 
                 <div className="mb-6 border-b border-gray-100 pb-6">

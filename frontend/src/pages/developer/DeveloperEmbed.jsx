@@ -8,6 +8,7 @@ import { toast } from "react-hot-toast";
 import CopyButton from "../../components/CopyButton";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { vs2015 } from "react-syntax-highlighter/dist/esm/styles/hljs";
+import { portalEmbed } from "../../lib/portalApi";
 
 export default function DeveloperEmbed() {
   const { tier } = usePortalAuthStore();
@@ -15,36 +16,62 @@ export default function DeveloperEmbed() {
 
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+  const [activeTokenCode, setActiveTokenCode] = useState("");
   
   // New Token State
   const [domain, setDomain] = useState("");
   const [permissions, setPermissions] = useState({ read: true, upload: false, chat: false });
 
-  // Mock token fetch
-  const { data: tokens, refetch } = useQuery({
+  // Fetch real tokens
+  const { data: tokens, refetch, isLoading } = useQuery({
     queryKey: ["embed-tokens"],
-    queryFn: async () => [{
-      id: "tok_123", domain: "hrms.yourcompany.com", token: "vish_embed_abc••••", perms: ["read", "upload"], created: "10 Mar 2026"
-    }],
+    queryFn: portalEmbed.list,
     enabled: isBusiness
   });
 
-  const handleGenerate = (e) => {
+  const handleGenerate = async (e) => {
     e.preventDefault();
     if (!domain) return toast.error("Domain required");
-    toast.success("Embed Token Generated");
-    setIsNewModalOpen(false);
-    refetch();
+    
+    const activePerms = [];
+    if (permissions.read) activePerms.push("read");
+    if (permissions.upload) activePerms.push("upload");
+    if (permissions.chat) activePerms.push("chat");
+
+    try {
+      await portalEmbed.create({
+        allowed_domain: domain,
+        permissions: activePerms
+      });
+      toast.success("Embed Token Generated");
+      setDomain("");
+      setPermissions({ read: true, upload: false, chat: false });
+      setIsNewModalOpen(false);
+      refetch();
+    } catch (err) {
+      toast.error(err.message || "Failed to generate token");
+    }
   };
 
-  const codeSnippets = {
+  const handleRevoke = async (id) => {
+    if (window.confirm("Are you sure you want to revoke this embed token?")) {
+      try {
+        await portalEmbed.revoke(id);
+        toast.success("Token revoked successfully");
+        refetch();
+      } catch (err) {
+        toast.error("Failed to revoke token");
+      }
+    }
+  };
+
+  const codeSnippets = (tokenVal) => ({
     HTML: `<div id="vishleshan-panel"></div>
 <script src="https://cdn.vishleshan.ai/embed.js"></script>
 <script>
 Vishleshan.init({
-  token: "vish_embed_xxxxx",
+  token: "${tokenVal || "YOUR_EMBED_TOKEN"}",
   container: "#vishleshan-panel",
-  sessionId: "your-session-id",
   theme: "light"
 });
 </script>`,
@@ -53,16 +80,14 @@ Vishleshan.init({
 export default function CandidateView() {
   return (
     <VishleshanPanel
-      token="vish_embed_xxxxx"
-      sessionId="your-session-id"
+      token="${tokenVal || "YOUR_EMBED_TOKEN"}"
       theme="light"
     />
   );
 }`,
     Vue: `<template>
   <VishleshanPanel
-    token="vish_embed_xxxxx"
-    sessionId="your-session-id"
+    token="${tokenVal || "YOUR_EMBED_TOKEN"}"
     theme="light"
   />
 </template>
@@ -70,12 +95,13 @@ export default function CandidateView() {
 <script setup>
 import { VishleshanPanel } from '@vishleshan/vue';
 </script>`
-  };
+  });
+
   const [activeTab, setActiveTab] = useState("HTML");
 
   if (!isBusiness) {
     return (
-      <div className="w-full max-w-5xl mx-auto flex items-center justify-center min-h-[60vh] relative">
+      <div className="w-full max-w-5xl mx-auto flex items-center justify-center min-h-[60vh] relative font-sans">
          <div className="bg-white border-2 border-gray-100 rounded-3xl p-10 max-w-lg w-full flex flex-col items-center text-center shadow-2xl relative z-10">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 mb-6"><Component size={32} /></div>
             <h2 className="text-2xl font-black text-charcoal mb-3">Embed requires Business plan</h2>
@@ -86,8 +112,10 @@ import { VishleshanPanel } from '@vishleshan/vue';
     );
   }
 
+  const activeSnippets = codeSnippets(activeTokenCode);
+
   return (
-    <div className="w-full max-w-5xl mx-auto pb-12">
+    <div className="w-full max-w-5xl mx-auto pb-12 font-sans">
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
@@ -112,34 +140,61 @@ import { VishleshanPanel } from '@vishleshan/vue';
          </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        {tokens?.map(tok => (
-          <div key={tok.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm">
-             <div>
-               <div className="flex items-center gap-2 mb-2">
-                 <Shield className="text-gray-400" size={18} />
-                 <h3 className="font-bold text-lg text-charcoal">{tok.domain}</h3>
-               </div>
-               <div className="flex items-center gap-2 text-sm">
-                 <code className="bg-gray-100 text-gray-600 px-2 py-1 rounded font-mono font-medium">{tok.token}</code>
-                 <CopyButton text={tok.token} />
-               </div>
-             </div>
-             
-             <div className="flex flex-col gap-3">
-                 <div className="flex gap-2">
-                   {tok.perms.map(p => <span key={p} className="bg-blue-50 text-blue-600 border border-blue-200 text-[10px] uppercase font-black px-2 py-0.5 rounded-full">{p}</span>)}
+      {isLoading ? (
+        <div className="text-center py-12 text-gray-500 animate-pulse">Loading embed tokens...</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6">
+          {tokens && tokens.length > 0 ? (
+            tokens.map(tok => (
+              <div key={tok.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm">
+                 <div className="flex-1 min-w-0">
+                   <div className="flex items-center gap-2 mb-2">
+                     <Shield className="text-gray-400" size={18} />
+                     <h3 className="font-bold text-lg text-charcoal truncate">{tok.allowed_domain}</h3>
+                   </div>
+                   <div className="flex items-center gap-2 text-sm">
+                     <code className="bg-gray-100 text-gray-600 px-2 py-1 rounded font-mono font-medium truncate select-all">{tok.token}</code>
+                     <CopyButton text={tok.token} />
+                   </div>
                  </div>
-                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Created {tok.created}</span>
-              </div>
+                 
+                 <div className="flex flex-col gap-3">
+                     <div className="flex gap-2">
+                       {tok.permissions && tok.permissions.map(p => (
+                         <span key={p} className="bg-blue-50 text-blue-600 border border-blue-200 text-[10px] uppercase font-black px-2 py-0.5 rounded-full">{p}</span>
+                       ))}
+                     </div>
+                     <span className="text-xs font-bold text-gray-400 uppercase tracking-widest text-right">
+                       Created {tok.created_at ? new Date(tok.created_at).toLocaleDateString() : ""}
+                     </span>
+                  </div>
 
-             <div className="flex gap-3 w-full md:w-auto mt-4 md:mt-0">
-               <button onClick={()=>setIsCodeModalOpen(true)} className="flex-1 md:flex-none px-4 py-2 border-2 border-charcoal text-charcoal font-bold rounded-xl hover:bg-gray-100 transition-colors whitespace-nowrap">Get Code</button>
-               <button className="flex-1 md:flex-none px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-xl transition-colors">Revoke</button>
-             </div>
-          </div>
-        ))}
-      </div>
+                 <div className="flex gap-3 w-full md:w-auto mt-4 md:mt-0">
+                   <button 
+                     onClick={() => {
+                       setActiveTokenCode(tok.token);
+                       setIsCodeModalOpen(true);
+                     }} 
+                     className="flex-1 md:flex-none px-4 py-2 border-2 border-charcoal text-charcoal font-bold rounded-xl hover:bg-gray-100 transition-colors whitespace-nowrap"
+                   >
+                     Get Code
+                   </button>
+                   <button 
+                     onClick={() => handleRevoke(tok.id)}
+                     className="flex-1 md:flex-none px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-xl transition-colors"
+                   >
+                     Revoke
+                   </button>
+                 </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center text-gray-400 py-12 border border-dashed rounded-2xl">
+              No embed tokens generated yet. Click "Generate Token" to create one.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* GENERATE TOKEN MODAL */}
       <AnimatePresence>
@@ -189,16 +244,16 @@ import { VishleshanPanel } from '@vishleshan/vue';
               <button onClick={() => setIsCodeModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white z-10"><X size={20}/></button>
               
               <div className="flex bg-[#2D2D2D] border-b border-gray-700 px-4 pt-4">
-                 {Object.keys(codeSnippets).map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === tab ? 'text-accent border-b-2 border-accent bg-[#1E1E1E]' : 'text-gray-400 hover:text-white'}`}>
+                 {Object.keys(activeSnippets).map(tab => (
+                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === tab ? 'text-white border-b-2 border-white bg-[#1E1E1E]' : 'text-gray-400 hover:text-white'}`}>
                       {tab}
                     </button>
                  ))}
               </div>
               <div className="p-6 relative">
-                 <button onClick={() => {navigator.clipboard.writeText(codeSnippets[activeTab]); toast.success("Code copied!")}} className="absolute top-6 right-6 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded shadow transition-colors font-sans">Copy Code</button>
+                 <button onClick={() => {navigator.clipboard.writeText(activeSnippets[activeTab]); toast.success("Code copied!")}} className="absolute top-6 right-6 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded shadow transition-colors font-sans">Copy Code</button>
                  <SyntaxHighlighter language={activeTab.toLowerCase() === "html" ? "html" : "javascript"} style={vs2015} customStyle={{ background: "transparent", padding: 0, margin: 0, fontSize: "14px", lineHeight: "1.5" }}>
-                   {codeSnippets[activeTab]}
+                   {activeSnippets[activeTab]}
                  </SyntaxHighlighter>
               </div>
             </motion.div>

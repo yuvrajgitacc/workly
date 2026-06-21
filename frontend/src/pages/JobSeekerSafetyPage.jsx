@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { publicJobsAPI } from '../lib/api';
-import JobsNavbar from '../components/JobsNavbar';
-import ResumeUploadModal from '../components/ResumeUploadModal';
+import { Header, Footer } from '../components/user/site-chrome';
 import { 
   Shield, 
   AlertTriangle, 
@@ -21,7 +20,6 @@ import {
 } from 'lucide-react';
 
 export default function JobSeekerSafetyPage() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Inputs
   const [companyName, setCompanyName] = useState("");
@@ -160,7 +158,7 @@ export default function JobSeekerSafetyPage() {
 
   return (
     <div className="min-h-screen bg-[#f5f4ef] text-[#2A2A2A] font-sans flex flex-col">
-      <JobsNavbar onUploadClick={() => setIsModalOpen(true)} />
+      <Header />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-12 space-y-12">
         
@@ -416,12 +414,7 @@ export default function JobSeekerSafetyPage() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full bg-[#FFFFFF] border-t border-[#e6dfcd] px-6 py-8 mt-12 text-center text-xs text-[#5c5c5c]">
-        &copy; {new Date().getFullYear()} CareerEngine Security Audits. Stay informed, stay protected.
-      </footer>
-
-      {/* Upload modal */}
-      <ResumeUploadModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <Footer />
     </div>
   );
 }

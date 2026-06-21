@@ -7,11 +7,32 @@ export const usePortalAuthStore = create((set) => ({
   company_name: "",
   
   setAuth: (d) => {
-    set({
-      developer: d, 
-      jwt: d.jwt_token || "",
-      tier: d.tier || "free",
-      company_name: d.company_name || ""
+    if (!d) return
+    set((state) => {
+      const updatedDev = { ...state.developer, ...d }
+      const updatedJwt = d.jwt_token || state.jwt || ""
+      const updatedTier = d.tier || updatedDev.tier || "free"
+      const updatedCompanyName = d.company_name || updatedDev.company_name || ""
+
+      updatedDev.tier = updatedTier
+      updatedDev.company_name = updatedCompanyName
+      if (updatedJwt && !updatedDev.jwt_token) {
+        updatedDev.jwt_token = updatedJwt
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("portal_dev", JSON.stringify(updatedDev))
+        if (updatedJwt) {
+          localStorage.setItem("portal_jwt", updatedJwt)
+        }
+      }
+
+      return {
+        developer: updatedDev,
+        jwt: updatedJwt,
+        tier: updatedTier,
+        company_name: updatedCompanyName
+      }
     })
   },
   

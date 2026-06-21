@@ -273,12 +273,34 @@ class JobSeekerAccount(models.Model):
     created_at        = models.DateTimeField(default=timezone.now)
     updated_at        = models.DateTimeField(auto_now=True)
     followed_companies = models.JSONField(default=list)
+    active_resume_draft = models.ForeignKey("ResumeDraft", on_delete=models.SET_NULL, null=True, blank=True, db_column="active_resume_draft_id", related_name="active_seeker_account")
+    last_ats_score = models.FloatField(null=True, blank=True)
 
     class Meta:
         db_table = "job_seeker_accounts"
 
     def __str__(self):
         return f"{self.full_name} <{self.email}>"
+
+
+class ResumeDraft(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    seeker = models.ForeignKey(JobSeekerAccount, on_delete=models.CASCADE, db_column="seeker_id", related_name="resume_drafts")
+    title = models.CharField(max_length=255)
+    template_id = models.CharField(max_length=50, default="modern")
+    content = models.JSONField(default=dict)
+    ats_score = models.FloatField(null=True, blank=True)
+    ats_report = models.JSONField(null=True, blank=True)
+    exported_pdf_path = models.CharField(max_length=500, null=True, blank=True)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "resume_drafts"
+
+    def __str__(self):
+        return f"Draft '{self.title}' for {self.seeker.full_name}"
 
 
 class JobApplication(models.Model):

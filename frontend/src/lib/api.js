@@ -64,7 +64,21 @@ export const authAPI = {
   getKeys: () => req("GET","/auth/api-keys"),
   deleteKey: (id) => req("DELETE",`/auth/api-keys/${id}`),
   getMe: () => req("GET","/auth/me"),
-  updateProfile: (b) => req("POST","/auth/update-profile",b)
+  updateProfile: (b) => req("POST","/auth/update-profile",b),
+  googleLogin: async (credential) => {
+    const d = await req("POST", "/auth/login-google", { credential })
+    localStorage.setItem("vish_jwt", d.jwt_token)
+    localStorage.setItem("vish_api_key", d.api_key || "")
+    localStorage.setItem("vish_company", JSON.stringify(d))
+    return d
+  },
+  githubLogin: async (code) => {
+    const d = await req("POST", "/auth/login-github", { code })
+    localStorage.setItem("vish_jwt", d.jwt_token)
+    localStorage.setItem("vish_api_key", d.api_key || "")
+    localStorage.setItem("vish_company", JSON.stringify(d))
+    return d
+  }
 }
 
 // SESSIONS
@@ -238,6 +252,22 @@ export const seekerAPI = {
   // Auth
   register: (b) => seekerReq('POST', '/api/v1/seeker/auth/register', b),
   login: (b) => seekerReq('POST', '/api/v1/seeker/auth/login', b),
+  googleLogin: async (credential) => {
+    const d = await seekerReq('POST', '/api/v1/seeker/auth/login-google', { credential });
+    if (typeof window !== "undefined") {
+      localStorage.setItem('vish_seeker_token', d.seeker_token);
+      localStorage.setItem('vish_seeker_data', JSON.stringify(d.seeker));
+    }
+    return d;
+  },
+  githubLogin: async (code) => {
+    const d = await seekerReq('POST', '/api/v1/seeker/auth/login-github', { code });
+    if (typeof window !== "undefined") {
+      localStorage.setItem('vish_seeker_token', d.seeker_token);
+      localStorage.setItem('vish_seeker_data', JSON.stringify(d.seeker));
+    }
+    return d;
+  },
   getMe: () => seekerReq('GET', '/api/v1/seeker/auth/me'),
   updateProfile: (b) => seekerReq('PATCH', '/api/v1/seeker/auth/profile', b),
 
@@ -251,6 +281,28 @@ export const seekerAPI = {
   getParseStatus: () => seekerReq('GET', '/api/v1/seeker/resume/parse-status'),
   enhanceResume: (jobDescription = '') =>
     seekerReq('POST', '/api/v1/seeker/resume/enhance', { job_description: jobDescription }),
+
+  // Resume Builder Drafts & ATS Agent
+  getDrafts: () => seekerReq('GET', '/api/v1/seeker/resume/drafts'),
+  getDraft: (id) => seekerReq('GET', `/api/v1/seeker/resume/drafts/${id}`),
+  createDraft: (b) => seekerReq('POST', '/api/v1/seeker/resume/drafts', b),
+  updateDraft: (id, b) => seekerReq('PATCH', `/api/v1/seeker/resume/drafts/${id}`, b),
+  deleteDraft: (id) => seekerReq('DELETE', `/api/v1/seeker/resume/drafts/${id}`),
+  activateDraft: (id, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return seekerReq('POST', `/api/v1/seeker/resume/drafts/${id}/activate`, fd, true);
+  },
+  exportDraftPdf: (id) => seekerReq('POST', `/api/v1/seeker/resume/drafts/${id}/export-pdf`),
+  recommendTemplates: () => seekerReq('GET', '/api/v1/seeker/resume/recommend-templates'),
+  atsCheck: (payload) => seekerReq('POST', '/api/agents/ats-check', payload),
+  optimizeDraft: (payload) => seekerReq('POST', '/api/v1/seeker/resume/drafts/optimize', payload),
+  enhanceDraft: (payload) => seekerReq('POST', '/api/v1/seeker/resume/drafts/enhance', payload),
+  importFileDraft: (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return seekerReq('POST', '/api/v1/seeker/resume/drafts/import-file', fd, true);
+  },
 
   // Jobs
   listJobs: (params = {}) => {

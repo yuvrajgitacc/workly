@@ -32,9 +32,7 @@ export default function DeveloperWebhooks() {
 
   const fetchWebhooks = async () => {
     if (portalWebhooks?.list) return portalWebhooks.list();
-    return [
-      { id: "wh_123", url: "https://yourcompany.com/api/webhooks/vishleshan", is_active: true, events: ["resume.parsed", "batch.completed"], success_rate: 99.8, last_triggered: "2 mins ago", fail_count: 0 }
-    ];
+    return [];
   };
 
   const { data: webhooks, refetch } = useQuery({
@@ -43,24 +41,50 @@ export default function DeveloperWebhooks() {
     enabled: !isFree
   });
 
+  const { data: logsData, isLoading: logsLoading, refetch: refetchLogs } = useQuery({
+    queryKey: ["webhook-logs", activeWebhook?.id],
+    queryFn: () => portalWebhooks.logs(activeWebhook.id),
+    enabled: !!activeWebhook?.id
+  });
+
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!url.startsWith("https://") && !url.startsWith("http://")) return toast.error("Invalid URL protocol");
     if (selectedEvents.length === 0) return toast.error("Select at least one event");
     
-    setCreatedSecret("whsec_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234");
-    toast.success("Webhook created");
+    try {
+      const res = await portalWebhooks.create({ url, events: selectedEvents });
+      setCreatedSecret(res.secret);
+      toast.success("Webhook created");
+    } catch (err) {
+      toast.error(err.message || "Failed to create webhook");
+    }
   };
 
   const handleDelete = async (id) => {
     if (window.confirm("Delete this webhook?")) {
-      toast.success("Webhook deleted");
-      refetch();
+      try {
+        await portalWebhooks.delete(id);
+        toast.success("Webhook deleted");
+        refetch();
+      } catch (err) {
+        toast.error(err.message || "Failed to delete webhook");
+      }
     }
   };
 
   const handleTest = async (id) => {
-    toast.success("Test payload sent synchronously");
+    try {
+      const res = await portalWebhooks.test(id);
+      if (res.delivered) {
+        toast.success(`Test webhook delivered (Status ${res.status_code})`);
+      } else {
+        toast.error(`Delivery failed: ${res.error || ('Status ' + res.status_code)}`);
+      }
+      refetch();
+    } catch (err) {
+      toast.error(err.message || "Failed to test webhook");
+    }
   };
 
   const openLogs = (webhook) => {
@@ -157,23 +181,33 @@ export default function DeveloperWebhooks() {
                </div>
                <button onClick={() => setPanelOpen(false)} className="p-2 hover:bg-gray-200 rounded-full text-gray-500"><X size={20}/></button>
              </div>
-             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 hide-scrollbar">
-                {Array.from({length: 15}).map((_, i) => {
-                  const isFail = Math.random() > 0.8;
-                  return (
-                    <div key={i} className="bg-gray-50 border border-gray-200 p-3 rounded-xl">
-                       <div className="flex justify-between items-start mb-2">
-                         <span className="text-xs font-bold text-charcoal bg-white border border-gray-200 px-2 py-0.5 rounded-md">{activeWebhook?.events[0]}</span>
-                         <span className="text-[11px] font-semibold text-gray-400">10m ago</span>
-                       </div>
-                       <div className="flex items-center justify-between text-sm font-medium">
-                         <span className={`px-2 py-0.5 rounded w-fit text-xs font-bold ${isFail ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{isFail ? '500 Server Error' : '200 OK'}</span>
-                         {isFail && <button className="text-blue-500 hover:text-blue-600 flex items-center gap-1 text-xs font-bold"><RefreshCw size={12}/> Retry</button>}
-                       </div>
-                    </div>
-                  )
-                })}
-             </div>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 hide-scrollbar">
+                {logsLoading ? (
+                  <div className="text-center py-8 text-sm font-semibold text-gray-400">Loading logs...</div>
+                ) : logsData && logsData.length > 0 ? (
+                  logsData.map((log) => {
+                    const isFail = !log.status_code || log.status_code < 200 || log.status_code >= 300;
+                    return (
+                      <div key={log.id} className="bg-gray-50 border border-gray-200 p-3 rounded-xl">
+                         <div className="flex justify-between items-start mb-2">
+                           <span className="text-xs font-bold text-charcoal bg-white border border-gray-200 px-2 py-0.5 rounded-md">{log.event_type}</span>
+                           <span className="text-[11px] font-semibold text-gray-400">
+                             {new Date(log.created_at).toLocaleTimeString()}
+                           </span>
+                         </div>
+                         <div className="flex items-center justify-between text-sm font-medium">
+                           <span className={`px-2 py-0.5 rounded w-fit text-xs font-bold ${isFail ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                             {log.status_code ? `${log.status_code} ${log.status_code >= 400 ? 'Error' : 'OK'}` : 'Failed'}
+                           </span>
+                           {isFail && log.error && <p className="text-[10px] text-red-500 mt-1">{log.error}</p>}
+                         </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 text-sm font-semibold text-gray-400">No delivery logs found</div>
+                )}
+              </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -191,8 +225,8 @@ export default function DeveloperWebhooks() {
                   <h2 className="text-2xl font-black text-charcoal mb-2">Webhook Created</h2>
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 mt-2">
                     <p className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-1.5"><AlertTriangle size={16} /> Use this signing secret to cryptographically verify the payload. <strong className="font-black">Never shown again.</strong></p>
-                    <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 px-3">
-                      <code className="text-sm flex-1 text-gray-600 font-mono truncate">{createdSecret}</code>
+                    <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 px-3 w-full">
+                      <code className="text-xs flex-1 text-gray-600 font-mono break-all whitespace-pre-wrap">{createdSecret}</code>
                       <CopyButton text={createdSecret} />
                     </div>
                   </div>

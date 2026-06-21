@@ -58,7 +58,7 @@ export default function AuthVerifyPage() {
 
         // Navigate to the Vishleshan dashboard
         setTimeout(() => {
-          navigate("/admin/dashboard");
+          navigate("/dashboard");
         }, 1200);
       } catch (err) {
         setStatus("error");
@@ -68,7 +68,7 @@ export default function AuthVerifyPage() {
   }, [searchParams, navigate]);
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-6">
+    <div className="min-h-screen bg-cream flex items-center justify-center p-6 recruiter-page">
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-10 max-w-md w-full text-center">
         {status === "verifying" && (
           <>

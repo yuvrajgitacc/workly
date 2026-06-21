@@ -255,3 +255,52 @@ h5 {
   box-shadow: none !important;
   border-color: transparent !important;
 }
+
+/* Scoped variables and utilities for Resume Builder Pro */
+.rb-pro-scope {
+  --primary-soft: oklch(0.95 0.03 258);
+  --surface: oklch(0.985 0.003 247);
+  --surface-2: oklch(0.965 0.005 247);
+  --color-primary-soft: var(--primary-soft);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --shadow-elevation-1: 0 1px 2px 0 rgb(60 64 67 / 0.08), 0 1px 3px 1px rgb(60 64 67 / 0.06);
+  --shadow-elevation-2: 0 1px 3px 0 rgb(60 64 67 / 0.12), 0 4px 8px 3px rgb(60 64 67 / 0.08);
+  --shadow-elevation-3: 0 4px 8px 3px rgb(60 64 67 / 0.15), 0 1px 3px 0 rgb(60 64 67 / 0.1);
+  --radius: 1rem;
+}
+
+.rb-pro-scope .google-gradient-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-google-blue) 0%,
+    var(--color-google-red) 33%,
+    var(--color-google-yellow) 66%,
+    var(--color-google-green) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.rb-pro-scope .google-dots-bg {
+  background-image: radial-gradient(circle, oklch(0.91 0.01 258) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.rb-pro-scope .elevation-hover {
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+.rb-pro-scope .elevation-hover:hover {
+  box-shadow: var(--shadow-elevation-2);
+  transform: translateY(-2px);
+}
+
+.recruiter-page,
+.auth-page {
+  --accent: #2563eb !important;
+  --accent-foreground: #ffffff !important;
+  --color-accent: #2563eb !important;
+  --color-accent-foreground: #ffffff !important;
+}
+

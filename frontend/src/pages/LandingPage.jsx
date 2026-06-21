@@ -25,7 +25,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div style={{ padding: '0', backgroundColor: 'white', minHeight: '100vh' }}>
+    <div className="recruiter-page" style={{ padding: '0', backgroundColor: 'white', minHeight: '100vh' }}>
       <Navbar onSignIn={handleAuth} isLoggedIn={isLoggedIn} />
       <main>
         <HeroHeader onStart={handleAuth} isLoggedIn={isLoggedIn} />

@@ -102,7 +102,7 @@ export default function DashboardLayout() {
   const cleanPath = pathname.replace(/\/$/, "");
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans">
+    <div className="min-h-screen bg-background text-foreground font-sans recruiter-page">
       <RateLimitBanner />
 
       {/* Top App Bar — Google style */}

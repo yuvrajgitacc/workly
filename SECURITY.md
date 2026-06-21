@@ -1,12 +1,12 @@
-# Security Policy — Vishleshan
+# Security Policy — Workly
 
-**Vishleshan** is a Multi-Agent Recruitment Intelligence Platform that processes sensitive personal data (resumes, contact details, employment history) and provides fraud detection services. We take security seriously and appreciate responsible disclosure from the community.
+**Workly** is a Multi-Agent Recruitment Intelligence Platform that processes sensitive personal data (resumes, contact details, employment history) and provides fraud detection services. We take security seriously and appreciate responsible disclosure from the community.
 
 ---
 
 ## Supported Versions
 
-The following versions of Vishleshan are actively maintained and receive security updates:
+The following versions of Workly are actively maintained and receive security updates:
 
 | Version | Supported          | Notes                              |
 | ------- | ------------------ | ---------------------------------- |
@@ -43,7 +43,7 @@ The following are **out of scope**:
 
 ## Sensitive Data Handled
 
-Vishleshan processes and stores the following sensitive information. Any vulnerability affecting these assets is considered **high priority**:
+Workly processes and stores the following sensitive information. Any vulnerability affecting these assets is considered **high priority**:
 
 - **PII** — Candidate names, email addresses, phone numbers, LinkedIn/GitHub profiles
 - **Resume Contents** — Employment history, education records, project details
@@ -56,7 +56,7 @@ Vishleshan processes and stores the following sensitive information. Any vulnera
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Vishleshan, **please do not open a public GitHub Issue**. Instead, report it privately using one of the following channels:
+If you discover a security vulnerability in Workly, **please do not open a public GitHub Issue**. Instead, report it privately using one of the following channels:
 
 ### Option 1 — GitHub Private Security Advisory (Preferred)
 Use GitHub's built-in [Private Vulnerability Reporting](https://github.com/DakshBhavsar007/Multi-Agent-Resume-Project/security/advisories/new) to submit a confidential advisory directly to the maintainers.
@@ -65,7 +65,7 @@ Use GitHub's built-in [Private Vulnerability Reporting](https://github.com/Daksh
 Send a detailed report to the project maintainers. Include the following information in your report:
 
 ```
-Subject: [SECURITY] Vishleshan — <brief description>
+Subject: [SECURITY] Workly — <brief description>
 
 - Component affected (e.g., "Resume Upload endpoint", "API Key auth")
 - Steps to reproduce the vulnerability
@@ -104,7 +104,7 @@ We use the following severity levels to prioritise reported issues:
 
 ## Security Best Practices for Self-Hosting
 
-If you are running Vishleshan locally or in your own infrastructure, follow these guidelines:
+If you are running Workly locally or in your own infrastructure, follow these guidelines:
 
 ### Environment Variables
 - **Never commit `.env` to version control** — it contains Gemini API keys, DB credentials, and JWT secrets.
@@ -133,7 +133,7 @@ If you are running Vishleshan locally or in your own infrastructure, follow thes
 
 ## Known Security Features
 
-Vishleshan includes the following built-in security controls:
+Workly includes the following built-in security controls:
 
 - **API Key Authentication** — All developer API endpoints require a valid `X-API-Key` header
 - **JWT Auth** — Recruiter sessions use short-lived JWT access tokens with refresh rotation
@@ -146,7 +146,7 @@ Vishleshan includes the following built-in security controls:
 
 ## Acknowledgements
 
-We are grateful to security researchers who help make Vishleshan safer. Responsible disclosures will be credited in release notes (with your permission).
+We are grateful to security researchers who help make Workly safer. Responsible disclosures will be credited in release notes (with your permission).
 
 ---
 

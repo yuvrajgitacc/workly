@@ -110,13 +110,44 @@ const AuthPage = () => {
 
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
+  const googleClientRef = useRef(null);
 
   useEffect(() => {
+    // Dynamic script loading for Google GIS client
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google) {
+        googleClientRef.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+          scope: "openid email profile",
+          callback: async (tokenResponse) => {
+            if (tokenResponse && tokenResponse.access_token) {
+              setLoading(true);
+              try {
+                const data = await authAPI.googleLogin(tokenResponse.access_token);
+                setAuth(data);
+                toast.success("Signed in successfully with Google!");
+                navigate('/admin/dashboard');
+              } catch (err) {
+                toast.error(err.message || "Google Authentication failed");
+              } finally {
+                setLoading(false);
+              }
+            }
+          }
+        });
+      }
+    };
+    document.body.appendChild(script);
+
     const jwt = localStorage.getItem("vish_jwt");
     if (jwt) {
       navigate('/admin/dashboard', { replace: true });
     }
-  }, [navigate]);
+  }, [navigate, setAuth]);
 
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -211,8 +242,32 @@ const AuthPage = () => {
         </div>
 
         <div className="sso-buttons" style={{ transform: "translateZ(20px)" }}>
-          <motion.button whileHover={{ y: -2 }} className="sso-btn">Google</motion.button>
-          <motion.button whileHover={{ y: -2 }} className="sso-btn">GitHub</motion.button>
+          <motion.button 
+            type="button" 
+            whileHover={{ y: -2 }} 
+            className="sso-btn"
+            onClick={() => {
+              if (googleClientRef.current) {
+                googleClientRef.current.requestAccessToken();
+              } else {
+                toast.error("Google Auth is loading. Please try again in a moment.");
+              }
+            }}
+          >
+            Google
+          </motion.button>
+          <motion.button 
+            type="button" 
+            whileHover={{ y: -2 }} 
+            className="sso-btn"
+            onClick={() => {
+              const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
+              const redirectUri = encodeURIComponent(import.meta.env.VITE_GITHUB_REDIRECT_URI);
+              window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=read:user,user:email&state=recruiter`;
+            }}
+          >
+            GitHub
+          </motion.button>
         </div>
 
         <div className="auth-footer" style={{ transform: "translateZ(10px)" }}>

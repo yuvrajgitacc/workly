@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import { Copy, Check, Menu, X, Search, FileText, Brain, Cpu, Zap, Lock } from "lucide-react";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { vs2015 } from "react-syntax-highlighter/dist/esm/styles/hljs";
-import { portalBilling } from "../../lib/portalApi";
+import { portalBilling, portalAuth } from "../../lib/portalApi";
+import { usePortalAuthStore } from "../../stores/portalAuthStore";
 
 export default function DeveloperLandingPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -16,7 +17,27 @@ export default function DeveloperLandingPage() {
     { id: "business", name: "Business", price: 9999, features: ["10000 parses/month", "Priority support", "Custom prompts", "99.9% uptime SLA"] }
   ]);
 
-  const isDevLoggedIn = typeof window !== "undefined" ? !!localStorage.getItem("portal_jwt") : false;
+  const { tier, jwt, initFromStorage, setAuth } = usePortalAuthStore();
+  const [isDevLoggedIn, setIsDevLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("portal_jwt");
+    if (token && token !== "undefined") {
+      setIsDevLoggedIn(true);
+      initFromStorage();
+      
+      // Fetch latest profile from backend to ensure tier is up-to-date
+      portalAuth.getMe()
+        .then((meData) => {
+          setAuth(meData);
+        })
+        .catch((err) => {
+          console.error("Failed to sync developer info on landing page:", err);
+        });
+    } else {
+      setIsDevLoggedIn(false);
+    }
+  }, [jwt, initFromStorage, setAuth]);
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -88,7 +109,7 @@ const response = await fetch(
   };
 
   return (
-    <div className="min-h-screen font-sans text-charcoal bg-bg">
+    <div className="min-h-screen font-sans text-charcoal bg-bg" style={{ '--accent': '#2563eb', '--accent-foreground': '#ffffff', '--accent-light': '#EFF6FF' }}>
       {/* NAVBAR */}
       <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? "bg-white shadow-md py-3" : "bg-white/90 backdrop-blur-md py-4"}`}>
         <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
@@ -137,7 +158,7 @@ const response = await fetch(
       {/* HERO */}
       <header className="pt-32 pb-20 px-6 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-12 items-center">
         <div className="md:col-span-5 flex flex-col items-start gap-6">
-          <span className="px-4 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-sm font-semibold flex flex-row items-center gap-2">
+          <span className="px-4 py-1.5 rounded-full bg-gray-100 border border-gray-200 text-gray-700 text-sm font-semibold flex flex-row items-center gap-2">
             <Cpu size={14} /> AI-Powered Talent API
           </span>
           <h1 className="text-4xl lg:text-[48px] font-black text-charcoal leading-[1.1] tracking-tight">
@@ -297,7 +318,7 @@ const response = await fetch(
                  <button 
                   key={tab} 
                   onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-4 text-sm font-semibold transition-colors ${activeTab === tab ? 'text-accent border-b-2 border-accent bg-[#1E1E1E]' : 'text-gray-400 hover:text-white'}`}
+                  className={`px-6 py-4 text-sm font-semibold transition-colors ${activeTab === tab ? 'text-white border-b-2 border-white bg-[#1E1E1E]' : 'text-gray-400 hover:text-white'}`}
                  >
                    {tab}
                  </button>
@@ -337,9 +358,21 @@ const response = await fetch(
                      ))}
                    </ul>
                    
-                   <Link to="/developer/register" className={`w-full block text-center py-3.5 rounded-xl font-bold transition-all ${plan.id === 'starter' ? 'bg-accent text-white hover:bg-accent-dark shadow-md shadow-accent/20' : 'bg-gray-100 text-charcoal hover:bg-gray-200'}`}>
-                     {plan.price === 0 ? "Start for free" : "Subscribe now"}
-                   </Link>
+                   {isDevLoggedIn ? (
+                      plan.id === tier ? (
+                        <button disabled className="w-full block text-center py-3.5 rounded-xl font-bold bg-green-50 text-green-700 border border-green-200 cursor-not-allowed">
+                          Current Plan
+                        </button>
+                      ) : (
+                        <Link to="/developer/portal/billing" className={`w-full block text-center py-3.5 rounded-xl font-bold transition-all ${plan.id === 'starter' ? 'bg-accent text-white hover:bg-accent-dark shadow-md shadow-accent/20' : 'bg-gray-100 text-charcoal hover:bg-gray-200'}`}>
+                          Subscribe now
+                        </Link>
+                      )
+                    ) : (
+                      <Link to="/developer/register" className={`w-full block text-center py-3.5 rounded-xl font-bold transition-all ${plan.id === 'starter' ? 'bg-accent text-white hover:bg-accent-dark shadow-md shadow-accent/20' : 'bg-gray-100 text-charcoal hover:bg-gray-200'}`}>
+                        {plan.price === 0 ? "Start for free" : "Subscribe now"}
+                      </Link>
+                    )}
                 </div>
              ))}
            </div>

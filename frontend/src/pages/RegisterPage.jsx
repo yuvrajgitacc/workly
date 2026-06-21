@@ -205,7 +205,7 @@ export default function RegisterPage() {
   );
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-cream py-12">
+    <div className="min-h-screen flex items-center justify-center bg-cream py-12 recruiter-page">
       <div className="bg-white p-12 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.1)] w-[520px] max-w-[90vw]">
         
         <StepIndicator />
@@ -218,7 +218,7 @@ export default function RegisterPage() {
                 Vishleshan
               </span>
               <h1 className="text-xl font-semibold text-charcoal mt-4">Create your account</h1>
-              <p className="text-muted text-sm mt-1">Start hiring smarter with AI</p>
+              <p className="text-muted-foreground text-sm mt-1">Start hiring smarter with AI</p>
             </div>
 
             <form onSubmit={handleCredentialsNext} className="space-y-4">
@@ -301,7 +301,7 @@ export default function RegisterPage() {
             <div className="text-center mb-6">
               <Building2 className="mx-auto text-accent mb-2" size={32} />
               <h2 className="text-xl font-semibold text-charcoal">Company Profile</h2>
-              <p className="text-muted text-sm mt-1">Help candidates learn about your company</p>
+              <p className="text-muted-foreground text-sm mt-1">Help candidates learn about your company</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -404,7 +404,7 @@ export default function RegisterPage() {
               </div>
             </form>
 
-            <p className="text-center text-xs text-muted mt-4">
+            <p className="text-center text-xs text-muted-foreground mt-4">
               All fields are optional — you can update them later in settings.
             </p>
           </motion.div>

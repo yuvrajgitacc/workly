@@ -6,7 +6,7 @@ import { usePortalAuthStore } from "../../stores/portalAuthStore";
 import { Activity, FileText, Zap, Key, Crown, AlertTriangle } from "lucide-react";
 import { LineChart, Line, XAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
-const PIE_COLORS = { Parse: "#2563EB", Match: "#3B82F6", Chat: "#22C55E", Export: "#9CA3AF" };
+const PIE_COLORS = { Parse: "#111111", Match: "#555555", Chat: "#22C55E", Export: "#9CA3AF" };
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -99,7 +99,7 @@ export default function DeveloperDashboard() {
          <div className="bg-white border border-gray-200 rounded-2xl p-5 flex flex-col">
             <div className="flex justify-between items-start mb-2 group">
               <span className="text-gray-900 text-xs font-black uppercase tracking-wide">Active Keys</span>
-              <Key className="text-gray-700 group-hover:text-blue-500 transition-colors" size={18} />
+              <Key className="text-gray-700 group-hover:text-black transition-colors" size={18} />
             </div>
             <span className="text-2xl font-black text-charcoal">{activeKeys}</span>
          </div>
@@ -230,7 +230,7 @@ export default function DeveloperDashboard() {
                        <span className="text-gray-800 mr-2">{log.time_ago || "just now"}</span>
                        <span className={`flex items-center justify-center w-4 h-4 rounded-full ${
                          log.status >= 200 && log.status < 300 ? "bg-green-100 text-green-500" :
-                         log.status >= 400 && log.status < 500 ? "bg-blue-100 text-amber-500" :
+                         log.status >= 400 && log.status < 500 ? "bg-gray-100 text-amber-500" :
                          "bg-red-100 text-red-500"
                        }`}>
                          <div className="w-1.5 h-1.5 rounded-full bg-current"></div>

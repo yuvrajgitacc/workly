@@ -117,7 +117,10 @@ def _seeker_dict(seeker: JobSeekerAccount) -> dict:
         "interviews_count": interviews_count,
         "saved_jobs_count": saved_jobs_count,
         "profile_strength": profile_strength,
+        "active_resume_draft_id": str(seeker.active_resume_draft.id) if seeker.active_resume_draft else None,
+        "last_ats_score": seeker.last_ats_score,
     }
+
 
 
 # ── Views ─────────────────────────────────────────────────────────────────────

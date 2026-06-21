@@ -112,6 +112,7 @@ def usage_summary(request):
         return JsonResponse(success_response({
             "current_month": year_month,
             "parse_count": parse_count,
+            "resumes_parsed": parse_count,
             "match_count": match_count,
             "chat_count": chat_count,
             "total_calls": total_calls,

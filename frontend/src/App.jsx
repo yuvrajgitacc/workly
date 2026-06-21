@@ -7,6 +7,7 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AuthVerifyPage from './pages/AuthVerifyPage';
+import GitHubCallbackPage from './pages/GitHubCallbackPage';
 import DashboardLayout from './pages/DashboardLayout';
 import DashboardHome from './pages/DashboardHome';
 import SessionsPage from './pages/SessionsPage';
@@ -49,6 +50,8 @@ import UserDashboard from './pages/user/UserDashboard';
 import UserUploadResume from './pages/user/UserUploadResume';
 import UserApply from './pages/user/UserApply';
 import UserApplications from './pages/user/UserApplications';
+import ResumeBuilderLanding from './pages/user/ResumeBuilderLanding';
+import ResumeEditor from './pages/user/ResumeEditor';
 
 function ScrollToTop() {
   const location = useLocation();
@@ -135,16 +138,21 @@ export default function App() {
           <Route path="/upload-resume" element={<UserUploadResume />} />
           <Route path="/apply/:jobId" element={<UserApply />} />
           <Route path="/applications" element={<UserApplications />} />
+          <Route path="/resume-builder" element={<ResumeBuilderLanding />} />
+          <Route path="/resume-builder/edit/:resumeId" element={<ResumeEditor />} />
 
           {/* Additional Seeker Pages (wrapped or trends) */}
           <Route path="/market-trends" element={<JobsTrendsPage />} />
           <Route path="/hiring-safety" element={<JobSeekerSafetyPage />} />
+          <Route path="/jobs/trends" element={<JobsTrendsPage />} />
+          <Route path="/jobs/safety-checker" element={<JobSeekerSafetyPage />} />
 
           {/* Job Seeker Portal — Auth */}
           <Route path="/jobs/login"    element={<JobSeekerLoginPage />} />
           <Route path="/jobs/register" element={<JobSeekerRegisterPage />} />
           <Route path="/auth/register" element={<JobSeekerRegisterPage />} />
           <Route path="/auth/login"    element={<Navigate to="/jobs/login" replace />} />
+          <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
 
           {/* Recruiter / Company Public Routes (all under /admin/*) */}
           <Route path="/admin" element={<LandingPage />} />

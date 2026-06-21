@@ -47,6 +47,22 @@ export const portalAuth = {
     }
     return d
   },
+  googleLogin: async (credential) => {
+    const d = await req("POST","/auth/login-google", { credential }, false)
+    if (typeof window !== "undefined") {
+      localStorage.setItem("portal_jwt", d.jwt_token)
+      localStorage.setItem("portal_dev", JSON.stringify(d))
+    }
+    return d
+  },
+  githubLogin: async (code) => {
+    const d = await req("POST","/auth/login-github", { code }, false)
+    if (typeof window !== "undefined") {
+      localStorage.setItem("portal_jwt", d.jwt_token)
+      localStorage.setItem("portal_dev", JSON.stringify(d))
+    }
+    return d
+  },
   logout: () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("portal_jwt")
@@ -54,7 +70,8 @@ export const portalAuth = {
       window.location.href="/developer/login"
     }
   },
-  getMe: () => req("GET","/auth/me")
+  getMe: () => req("GET","/auth/me"),
+  updateProfile: (b) => req("PATCH", "/auth/profile", b)
 }
 
 // Keys

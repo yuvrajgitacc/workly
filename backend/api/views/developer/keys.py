@@ -43,8 +43,10 @@ def keys_root(request):
                     "id": str(k.id),
                     "key_name": k.key_name,
                     "environment": k.environment,
+                    "secret_key": k.secret_key,
                     "secret_key_masked": k.secret_key[:12] + "••••••••",
                     "public_key": k.public_key,
+                    "is_active": k.is_active,
                     "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
                     "created_at": k.created_at.isoformat() if k.created_at else None,
                     "this_month_calls": this_month_calls

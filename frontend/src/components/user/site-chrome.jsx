@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Briefcase, Search, Building2, User, LayoutDashboard, LogOut } from "lucide-react";
+import { Briefcase, Search, Building2, User, LayoutDashboard, LogOut, Shield, TrendingUp, FileText } from "lucide-react";
 import { NotificationBell } from "./NotificationBell";
 
 const links = [
   { to: "/", label: "Home", icon: LayoutDashboard },
   { to: "/jobs", label: "Jobs", icon: Search },
   { to: "/companies", label: "Companies", icon: Building2 },
+  { to: "/resume-builder", label: "Resume Builder", icon: FileText },
   { to: "/applications", label: "Applications", icon: Briefcase },
   { to: "/profile", label: "Profile", icon: User },
+  { to: "/hiring-safety", label: "Hiring Safety", icon: Shield },
+  { to: "/market-trends", label: "Market Trends", icon: TrendingUp },
 ];
 
 export function Header() {
@@ -67,7 +70,7 @@ export function Header() {
               <Link
                 key={l.to}
                 to={l.to}
-                className={`pill px-4 py-2 text-sm font-medium transition ${
+                className={`pill px-4 py-2 text-sm font-medium whitespace-nowrap transition ${
                   active
                     ? "bg-muted text-foreground font-medium shadow-sm"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -135,7 +138,7 @@ export function Header() {
             <Link
               key={l.to}
               to={l.to}
-              className={`pill flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-medium ${
+              className={`pill flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap ${
                 active 
                   ? "bg-muted text-foreground font-medium shadow-sm" 
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
