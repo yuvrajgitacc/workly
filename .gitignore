@@ -62,3 +62,10 @@ dump.rdb
 backend/redis_bin/
 backend/workly_data.json
 
+# Test output files
+backend/test_resume_2col.pdf
+backend/scratch/
+/*.pdf
+*.pdf
+
+
