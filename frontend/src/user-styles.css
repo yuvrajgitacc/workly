@@ -297,7 +297,8 @@ h5 {
 }
 
 .recruiter-page,
-.auth-page {
+.auth-page,
+.developer-page {
   --accent: #2563eb !important;
   --accent-foreground: #ffffff !important;
   --color-accent: #2563eb !important;

@@ -20,6 +20,7 @@ from api.views import (
     google_auth,
     github_auth,
     seeker_resume_builder,
+    parse,
 )
 from api.views.developer import (
     auth as dev_auth,
@@ -155,6 +156,9 @@ urlpatterns = [
     path('api/v1/public/companies/<str:company_id>', seeker_jobs.public_company_detail, name='public-company-detail'),
 
     # ── Protection & Fraud Detection ──────────────────────────────────────────
+    path('api/v1/parse', parse.parse_resume, name='api-parse'),
+    path('api/v1/match', parse.global_match, name='api-global-match'),
+    path('api/v1/chat', parse.global_chat, name='api-global-chat'),
     path('api/v1/protection/scan', protection.scan_portfolio, name='protection-scan'),
     path('api/v1/protection/history', protection.get_scan_history, name='protection-history'),
 
@@ -182,7 +186,10 @@ urlpatterns = [
     path('api/v1/seeker/resume/drafts/<str:draft_id>', seeker_resume_builder.draft_detail, name='seeker-drafts-detail'),
     path('api/v1/seeker/resume/drafts/<str:draft_id>/activate', seeker_resume_builder.activate_draft, name='seeker-draft-activate'),
     path('api/v1/seeker/resume/drafts/<str:draft_id>/export-pdf', seeker_resume_builder.export_draft_pdf, name='seeker-draft-export-pdf'),
+    path('api/v1/seeker/resume/drafts/<str:draft_id>/versions', seeker_resume_builder.manage_versions, name='seeker-draft-versions'),
+    path('api/v1/seeker/resume/drafts/<str:draft_id>/versions/<str:version_id>/restore', seeker_resume_builder.restore_version, name='seeker-draft-version-restore'),
     path('api/v1/seeker/resume/recommend-templates', seeker_resume_builder.recommend_templates, name='seeker-recommend-templates'),
+    path('api/debug/project-relevance', seeker_resume_builder.debug_project_relevance, name='debug-project-relevance'),
 
     # ── Job Seeker Jobs & Applications ─────────────────────────────────────────
     path('api/v1/seeker/jobs', seeker_jobs.list_jobs, name='seeker-jobs-list'),

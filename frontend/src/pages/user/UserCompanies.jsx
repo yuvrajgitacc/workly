@@ -10,6 +10,8 @@ export default function UserCompanies() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const POPULAR_COMPANIES = ["Google", "Microsoft", "Meta", "Amazon", "Netflix", "Technology", "Healthcare", "Finance", "Education"];
 
   const fetchCompanies = () => {
     setLoading(true);
@@ -45,16 +47,33 @@ export default function UserCompanies() {
           <p className="mt-3 text-muted-foreground">From early-stage startups to global platforms — find the place that fits you.</p>
         </div>
 
-        <div className="google-shadow mt-8 flex items-center gap-2 rounded-3xl border border-border bg-background p-2">
-          <div className="flex flex-1 items-center gap-2 px-3 py-2">
-            <Search className="h-5 w-5 text-muted-foreground" />
-            <input 
-              placeholder="Search company name or industry..." 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
-            />
+        <div className="relative mt-8">
+          <div className="google-shadow flex items-center gap-2 rounded-3xl border border-border bg-background p-2">
+            <div className="flex flex-1 items-center gap-2 px-3 py-2">
+              <Search className="h-5 w-5 text-muted-foreground" />
+              <input 
+                placeholder="Search company name or industry..." 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
+              />
+            </div>
           </div>
+          {showSuggestions && (
+            <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+              {POPULAR_COMPANIES.map((s, i) => (
+                <div 
+                  key={i} 
+                  onMouseDown={() => setSearch(s)}
+                  className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left"
+                >
+                  {s}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

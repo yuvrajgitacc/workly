@@ -1,6 +1,8 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ||
              "http://127.0.0.1:8000/api/v1"
 
+export const API_HOST = BASE.replace("/api/v1", "");
+
 function getHeaders(isFile=false) {
   const h = {};
   const apiKey = localStorage.getItem("vish_api_key");
@@ -63,8 +65,6 @@ export const authAPI = {
   generateKey: (b) => req("POST","/auth/api-keys/generate",b),
   getKeys: () => req("GET","/auth/api-keys"),
   deleteKey: (id) => req("DELETE",`/auth/api-keys/${id}`),
-  getMe: () => req("GET","/auth/me"),
-  updateProfile: (b) => req("POST","/auth/update-profile",b),
   googleLogin: async (credential) => {
     const d = await req("POST", "/auth/login-google", { credential })
     localStorage.setItem("vish_jwt", d.jwt_token)
@@ -78,7 +78,9 @@ export const authAPI = {
     localStorage.setItem("vish_api_key", d.api_key || "")
     localStorage.setItem("vish_company", JSON.stringify(d))
     return d
-  }
+  },
+  getMe: () => req("GET","/auth/me"),
+  updateProfile: (b) => req("POST","/auth/update-profile",b)
 }
 
 // SESSIONS
@@ -136,10 +138,15 @@ export const candidatesAPI = {
   get: (sessionId,candId) =>
     req("GET",
       `/sessions/${sessionId}/candidates/${candId}`),
-  action: (sessionId,candId,action) =>
-    req("PATCH",
-      `/sessions/${sessionId}/candidates/${candId}/action`,
-      {action}),
+  action: (sessionId, candId, action, file = null) => {
+    if (file) {
+      const fd = new FormData();
+      fd.append("action", action);
+      fd.append("offer_letter", file);
+      return req("PATCH", `/sessions/${sessionId}/candidates/${candId}/action`, fd, true);
+    }
+    return req("PATCH", `/sessions/${sessionId}/candidates/${candId}/action`, { action });
+  },
   delete: (sessionId,candId) =>
     req("DELETE",
       `/sessions/${sessionId}/candidates/${candId}`),
@@ -164,10 +171,12 @@ export const exportAPI = {
   candidatesUrl: (sessionId,status="hired") =>
     `${BASE}/sessions/${sessionId}/export/candidates` +
     `?status=${status}&x_api_key=${
-      localStorage.getItem("vish_api_key")||""}`,
+      localStorage.getItem("vish_api_key")||""}&token=${
+      localStorage.getItem("vish_jwt")||""}`,
   reportUrl: (sessionId) =>
     `${BASE}/sessions/${sessionId}/export/report` +
-    `?x_api_key=${localStorage.getItem("vish_api_key")||""}`
+    `?x_api_key=${localStorage.getItem("vish_api_key")||""}&token=${
+      localStorage.getItem("vish_jwt")||""}`
 }
 
 // PUBLIC JOBS (Job Seeker Portal API)
@@ -236,7 +245,7 @@ async function seekerReq(method, path, body = null, isFile = false) {
     headers: getSeekerHeaders(isFile),
     body: body ? (isFile ? body : JSON.stringify(body)) : undefined,
   };
-  const res = await fetch(`http://127.0.0.1:8000${path}`, opts);
+  const res = await fetch(`${API_HOST}${path}`, opts);
   const data = await res.json();
   if (res.status === 401) {
     localStorage.removeItem('vish_seeker_token');
@@ -303,6 +312,11 @@ export const seekerAPI = {
     fd.append('file', file);
     return seekerReq('POST', '/api/v1/seeker/resume/drafts/import-file', fd, true);
   },
+  getVersions: (draftId) => seekerReq('GET', `/api/v1/seeker/resume/drafts/${draftId}/versions`),
+  createVersion: (draftId, b) => seekerReq('POST', `/api/v1/seeker/resume/drafts/${draftId}/versions`, b),
+  restoreVersion: (draftId, versionId) => seekerReq('POST', `/api/v1/seeker/resume/drafts/${draftId}/versions/${versionId}/restore`),
+
+
 
   // Jobs
   listJobs: (params = {}) => {
@@ -324,6 +338,7 @@ export const seekerAPI = {
 
   // Applications
   getApplications: () => seekerReq('GET', '/api/v1/seeker/applications'),
+  acceptOffer: (id) => seekerReq('POST', `/api/v1/seeker/applications/${id}/accept`),
 
   // Notifications
   getNotifications: () => seekerReq('GET', '/api/v1/seeker/notifications'),
@@ -339,7 +354,7 @@ async function publicReq(method, path) {
     method,
     headers: { 'Content-Type': 'application/json' },
   };
-  const res = await fetch(`http://127.0.0.1:8000${path}`, opts);
+  const res = await fetch(`${API_HOST}${path}`, opts);
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Request failed');
   return data.data;
@@ -356,7 +371,7 @@ export const publicAPI = {
   parseResume: (file) => {
     const fd = new FormData();
     fd.append("file", file);
-    return fetch("http://127.0.0.1:8000/api/v1/public/parse-resume", {
+    return fetch(`${API_HOST}/api/v1/public/parse-resume`, {
       method: "POST",
       body: fd,
     })

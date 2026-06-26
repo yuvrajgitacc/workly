@@ -43,6 +43,15 @@ export default function DashboardLayout() {
   const isDesktop = useIsDesktop();
   const [open, setOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [showGlobalSuggestions, setShowGlobalSuggestions] = useState(false);
+  const GLOBAL_SUGGESTIONS = [
+    { name: "Create session", path: "/admin/dashboard/sessions/new" },
+    { name: "Active sessions", path: "/admin/dashboard/sessions" },
+    { name: "Fraud scanner", path: "/admin/dashboard/protection" },
+    { name: "Recruiter settings", path: "/admin/dashboard/settings" },
+    { name: "Developer portal", path: "/developer" },
+  ];
 
   useEffect(() => {
     initFromStorage();
@@ -126,15 +135,36 @@ export default function DashboardLayout() {
         </Link>
 
         {/* Search — inline on sm+, icon-only sheet on xs */}
-        <div className="flex-1 max-w-2xl mx-auto px-2 hidden sm:block">
+        <div className="flex-1 max-w-2xl mx-auto px-2 hidden sm:block relative">
           <div className="group flex items-center h-11 md:h-12 bg-[#f1f3f4] rounded-full px-4 gap-3 focus-within:bg-card focus-within:shadow-google-1 transition">
             <Search size={20} className="text-[#5f6368] shrink-0" />
             <input
               type="text"
               placeholder="Search candidates, sessions, jobs"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              onFocus={() => setShowGlobalSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowGlobalSuggestions(false), 200)}
               className="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-[#202124] placeholder:text-[#5f6368]"
             />
           </div>
+          {showGlobalSuggestions && (
+            <div className="absolute top-[105%] left-2 right-2 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+              {GLOBAL_SUGGESTIONS.map((s, i) => (
+                <div 
+                  key={i} 
+                  onMouseDown={() => {
+                    setGlobalSearch(s.name);
+                    navigate(s.path);
+                  }}
+                  className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left flex justify-between items-center"
+                >
+                  <span>{s.name}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">{s.path.split('/').pop()}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex-1 sm:hidden" />
 
@@ -178,14 +208,36 @@ export default function DashboardLayout() {
             >
               <X size={22} />
             </button>
-            <div className="flex-1 flex items-center h-11 bg-[#f1f3f4] rounded-full px-4 gap-3">
+            <div className="flex-1 flex items-center h-11 bg-[#f1f3f4] rounded-full px-4 gap-3 relative">
               <Search size={20} className="text-[#5f6368] shrink-0" />
               <input
                 autoFocus
                 type="text"
-                placeholder="Search"
-                className="flex-1 min-w-0 bg-transparent outline-none text-[15px]"
+                placeholder="Search candidates, sessions, jobs"
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onFocus={() => setShowGlobalSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowGlobalSuggestions(false), 200)}
+                className="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-[#202124] placeholder:text-[#5f6368]"
               />
+              {showGlobalSuggestions && (
+                <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+                  {GLOBAL_SUGGESTIONS.map((s, i) => (
+                    <div 
+                      key={i} 
+                      onMouseDown={() => {
+                        setGlobalSearch(s.name);
+                        navigate(s.path);
+                        setSearchOpen(false);
+                      }}
+                      className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left flex justify-between items-center"
+                    >
+                      <span>{s.name}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">{s.path.split('/').pop()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

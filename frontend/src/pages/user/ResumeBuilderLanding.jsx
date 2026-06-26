@@ -18,6 +18,24 @@ import {
 import toast from "react-hot-toast";
 import { TEMPLATE_META } from "../../components/user/templates/ResumePreview";
 
+import resumeModern from "../../assets/resume_template_modern.png";
+import resumeClassic from "../../assets/resume_template_classic.png";
+import resumeMinimal from "../../assets/resume_template_minimal.png";
+import resumeExecutive from "../../assets/resume_template_executive.png";
+import resumeCreative from "../../assets/resume_template_creative.png";
+import resumeCompact from "../../assets/resume_template_compact.png";
+import resumeAts from "../../assets/resume_template_ats.png";
+
+const TEMPLATE_IMAGES = {
+  modern: resumeModern,
+  classic: resumeClassic,
+  minimal: resumeMinimal,
+  executive: resumeExecutive,
+  creative: resumeCreative,
+  compact: resumeCompact,
+  ats: resumeAts
+};
+
 export default function ResumeBuilderLanding() {
   const navigate = useNavigate();
   const token = localStorage.getItem("vish_seeker_token");
@@ -232,8 +250,29 @@ export default function ResumeBuilderLanding() {
             {atsReport && (
               <div>
                 <div className="flex items-center gap-4 bg-muted/40 p-4 rounded-2xl border border-border/60 mb-4">
-                  <div className="relative grid place-items-center w-16 h-16 rounded-full border-4 border-primary/20 bg-primary/5">
-                    <span className="text-xl font-bold text-primary">{atsReport.overallScore}%</span>
+                  <div className="relative w-16 h-16 flex items-center justify-center">
+                    <svg className="absolute w-full h-full transform -rotate-90">
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="27"
+                        stroke="rgba(37, 99, 235, 0.1)"
+                        strokeWidth="4"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="27"
+                        stroke="rgb(37, 99, 235)"
+                        strokeWidth="4"
+                        fill="transparent"
+                        strokeDasharray="169.6"
+                        strokeDashoffset={169.6 - (169.6 * (atsReport.overallScore || 0)) / 100}
+                        className="transition-all duration-500 ease-out"
+                      />
+                    </svg>
+                    <span className="text-xl font-bold text-primary relative z-10">{atsReport.overallScore}%</span>
                   </div>
                   <div>
                     <div className="text-sm font-semibold">ATS Compatibility Score</div>
@@ -348,18 +387,12 @@ export default function ResumeBuilderLanding() {
                     )}
                     
                     {/* Visual Mock representation of template */}
-                    <div className="absolute inset-5 bg-white border border-border rounded-xl shadow-elevation-1 p-3 flex flex-col gap-2 scale-100 group-hover:scale-[1.02] transition-all">
-                      <div className="h-4 rounded w-2/3" style={{ backgroundColor: "#e8f0fe" }} />
-                      <div className="h-2 rounded w-1/2" style={{ backgroundColor: "#f1f3f4" }} />
-                      <div className="h-px bg-border my-1" />
-                      <div className="flex gap-2">
-                        {id === "modern" && <div className="w-1/3 h-24 rounded" style={{ backgroundColor: "#e8f0fe" }} />}
-                        <div className="flex-1 flex flex-col gap-1.5">
-                          <div className="h-2.5 rounded w-full" style={{ backgroundColor: "#f1f3f4" }} />
-                          <div className="h-2 rounded w-5/6" style={{ backgroundColor: "#f1f3f4" }} />
-                          <div className="h-2 rounded w-4/5" style={{ backgroundColor: "#f1f3f4" }} />
-                        </div>
-                      </div>
+                    <div className="absolute inset-4 bg-white border border-border rounded-xl shadow-elevation-1 overflow-hidden scale-100 group-hover:scale-[1.02] transition-all">
+                      <img 
+                        src={TEMPLATE_IMAGES[id]} 
+                        alt={`${meta.name} Template Preview`} 
+                        className="w-full h-full object-cover object-top"
+                      />
                     </div>
                   </div>
 

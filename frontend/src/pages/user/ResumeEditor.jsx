@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Header } from "../../components/user/site-chrome";
-import { seekerAPI } from "../../lib/api";
+import { seekerAPI, API_HOST } from "../../lib/api";
 import { ResumePreview, TEMPLATE_META } from "../../components/user/templates/ResumePreview";
 import {
   Download,
@@ -21,7 +21,11 @@ import {
   Loader2,
   RefreshCw,
   Target,
-  ArrowLeft
+  ArrowLeft,
+  Sun,
+  Moon,
+  History,
+  Clock
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -43,7 +47,8 @@ const emptyResume = {
   education: [],
   projects: [],
   certifications: [],
-  languages: []
+  languages: [],
+  columns: 1
 };
 
 export default function ResumeEditor() {
@@ -59,9 +64,119 @@ export default function ResumeEditor() {
   const [draftTitle, setDraftTitle] = useState("");
   const [templateId, setTemplateId] = useState("modern");
   const [content, setContent] = useState(emptyResume);
+
+  // Version History state
+  const [versions, setVersions] = useState([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [showVersionsPanel, setShowVersionsPanel] = useState(false);
+  const [newVersionName, setNewVersionName] = useState("");
+
+  // Dark Mode state
+  const [darkMode, setDarkMode] = useState(
+    localStorage.getItem("theme") === "dark" || 
+    document.documentElement.classList.contains("dark")
+  );
+
+  // Auto-save Status
+  const [autoSaveStatus, setAutoSaveStatus] = useState("Saved");
+  const isFirstMount = useRef(true);
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  }, [darkMode]);
+
+  const loadVersions = async () => {
+    if (!resumeId) return;
+    setVersionsLoading(true);
+    try {
+      const res = await seekerAPI.getVersions(resumeId);
+      setVersions(res || []);
+    } catch (err) {
+      console.error("Failed to load versions:", err);
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const handleSaveVersion = async () => {
+    if (!resumeId) return;
+    try {
+      await seekerAPI.createVersion(resumeId, { title: newVersionName });
+      toast.success("Version checkpoint saved!");
+      setNewVersionName("");
+      loadVersions();
+    } catch (err) {
+      toast.error("Failed to save version checkpoint");
+      console.error(err);
+    }
+  };
+
+  const handleRestoreVersion = async (versionId) => {
+    if (!resumeId) return;
+    const confirmRestore = window.confirm("Are you sure you want to restore this version? Your unsaved edits will be overwritten.");
+    if (!confirmRestore) return;
+    
+    try {
+      const res = await seekerAPI.restoreVersion(resumeId, versionId);
+      setContent(res.content);
+      setDraftTitle(res.title);
+      setTemplateId(res.templateId || "modern");
+      setAtsReport(res.atsReport);
+      toast.success("Version restored successfully!");
+    } catch (err) {
+      toast.error("Failed to restore version");
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (showVersionsPanel) {
+      loadVersions();
+    }
+  }, [showVersionsPanel]);
+
+  // Set first mount ref
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => {
+        isFirstMount.current = false;
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
+
+  // Debounced Auto-save
+  useEffect(() => {
+    if (loading || !resumeId || isFirstMount.current) return;
+    
+    setAutoSaveStatus("Saving...");
+    const timer = setTimeout(async () => {
+      try {
+        await seekerAPI.updateDraft(resumeId, {
+          title: draftTitle,
+          templateId,
+          content: content
+        });
+        setAutoSaveStatus("Saved");
+      } catch (err) {
+        console.error("Auto-save failed:", err);
+        setAutoSaveStatus("Error saving");
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [content, draftTitle, templateId]);
+
   
   // Job tailoring state
   const [jobInfo, setJobInfo] = useState(null);
+  const [targetJobDescription, setTargetJobDescription] = useState("");
   
   // ATS Check state
   const [atsLoading, setAtsLoading] = useState(false);
@@ -154,6 +269,7 @@ export default function ResumeEditor() {
           try {
             const job = await seekerAPI.getJob(targetJobId);
             setJobInfo(job);
+            setTargetJobDescription(job.job_description || "");
           } catch (jobErr) {
             console.error("Failed to load job details for tailoring:", jobErr);
           }
@@ -170,7 +286,7 @@ export default function ResumeEditor() {
     fetchInitData();
   }, [resumeId, targetJobId]);
 
-  // 2. Debounced ATS Analyzer Call (triggers 2s after typing stops)
+  // 2. Debounced ATS Analyzer Call (triggers 2s after typing stops or job description changes)
   useEffect(() => {
     if (loading) return;
     if (!autoScan) return;
@@ -194,15 +310,16 @@ export default function ResumeEditor() {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [content, jobInfo, loading, autoScan]);
+  }, [content, jobInfo, loading, autoScan, targetJobDescription]);
 
   const runAtsCheck = async (contentToCheck) => {
     setAtsLoading(true);
     setAtsError(null);
     try {
       const payload = {
+        resumeDraftId: resumeId, // Link check to active draft
         content: contentToCheck,
-        targetJobDescription: jobInfo?.job_description || undefined
+        targetJobDescription: targetJobDescription || undefined
       };
       
       const report = await seekerAPI.atsCheck(payload);
@@ -226,7 +343,7 @@ export default function ResumeEditor() {
     try {
       const payload = {
         content,
-        targetJobDescription: jobInfo?.job_description || ""
+        targetJobDescription: targetJobDescription || ""
       };
       const data = await seekerAPI.optimizeDraft(payload);
       setOptimizations(data.optimizations || []);
@@ -246,7 +363,8 @@ export default function ResumeEditor() {
       const payload = {
         resumeDraftId: resumeId,
         content,
-        targetJobDescription: jobInfo?.job_description || ""
+        targetJobDescription: targetJobDescription || "",
+        liveAtsScore: atsReport?.overallScore || null   // send live score as anchor
       };
       const response = await seekerAPI.enhanceDraft(payload);
       setEnhancementReport(response);
@@ -260,76 +378,136 @@ export default function ResumeEditor() {
     }
   };
 
+  const saveUpdatedContent = async (updatedContent) => {
+    try {
+      await seekerAPI.updateDraft(resumeId, {
+        title: draftTitle,
+        templateId,
+        content: updatedContent
+      });
+      // Re-evaluate compatibility immediately!
+      runAtsCheck(updatedContent);
+    } catch (err) {
+      console.error("Auto-saving AI changes failed:", err);
+      toast.error("Failed to save AI changes to database.");
+    }
+  };
+
+  const applyMissingKeywords = () => {
+    if (!enhancementReport || !enhancementReport.missing_keywords) return;
+    const currentSkills = content.skills || [];
+    const skillsToAdd = enhancementReport.missing_keywords.filter(
+      (kw) => !currentSkills.some((s) => s.toLowerCase().trim() === kw.toLowerCase().trim())
+    );
+    if (skillsToAdd.length === 0) {
+      toast.success("All keywords are already in your skills!");
+      return;
+    }
+    const updatedContent = {
+      ...content,
+      skills: [...currentSkills, ...skillsToAdd]
+    };
+    setContent(updatedContent);
+    saveUpdatedContent(updatedContent);
+    toast.success("Added missing keywords to skills!");
+  };
+
   const applyEnhancedSummary = (newSummary) => {
-    setContent((prev) => ({
-      ...prev,
-      summary: newSummary
-    }));
+    let summaryText = newSummary ? newSummary.trim() : "";
+    if (summaryText && !summaryText.endsWith(".")) {
+      summaryText += ".";
+    }
+    const updatedContent = {
+      ...content,
+      summary: summaryText
+    };
+    setContent(updatedContent);
+    saveUpdatedContent(updatedContent);
     toast.success("Applied AI summary rewrite!");
   };
 
+  const dismissEnhancedSummary = () => {
+    setEnhancementReport((prev) => ({ ...prev, summary_rewrite: null }));
+    toast.success("Summary suggestion dismissed");
+  };
+
+  const dismissEnhancedExperience = (idx) => {
+    setEnhancementReport((prev) => ({
+      ...prev,
+      enhanced_experience: (prev.enhanced_experience || []).filter((_, i) => i !== idx)
+    }));
+    toast.success("Experience suggestion dismissed");
+  };
+
+  const dismissEnhancedProject = (idx) => {
+    setEnhancementReport((prev) => ({
+      ...prev,
+      enhanced_projects: (prev.enhanced_projects || []).filter((_, i) => i !== idx)
+    }));
+    toast.success("Project suggestion dismissed");
+  };
+
   const applyEnhancedBullets = (expIdx, enhancedBullets) => {
-    setContent((prev) => {
-      const newExp = [...(prev.experience || [])];
-      if (newExp[expIdx]) {
-        newExp[expIdx] = {
-          ...newExp[expIdx],
-          bullets: enhancedBullets
-        };
-      }
-      return { ...prev, experience: newExp };
-    });
+    const newExp = [...(content.experience || [])];
+    if (newExp[expIdx]) {
+      newExp[expIdx] = {
+        ...newExp[expIdx],
+        bullets: enhancedBullets
+      };
+    }
+    const updatedContent = { ...content, experience: newExp };
+    setContent(updatedContent);
+    saveUpdatedContent(updatedContent);
     toast.success("Applied enhanced bullets!");
   };
 
   const applySingleEnhancedBullet = (expIdx, bulletIdx, enhancedText) => {
-    setContent((prev) => {
-      const newExp = [...(prev.experience || [])];
-      if (newExp[expIdx] && newExp[expIdx].bullets) {
-        const newBullets = [...newExp[expIdx].bullets];
-        newBullets[bulletIdx] = enhancedText;
-        newExp[expIdx] = { ...newExp[expIdx], bullets: newBullets };
-      }
-      return { ...prev, experience: newExp };
-    });
+    const newExp = [...(content.experience || [])];
+    if (newExp[expIdx] && newExp[expIdx].bullets) {
+      const newBullets = [...newExp[expIdx].bullets];
+      newBullets[bulletIdx] = enhancedText;
+      newExp[expIdx] = { ...newExp[expIdx], bullets: newBullets };
+    }
+    const updatedContent = { ...content, experience: newExp };
+    setContent(updatedContent);
+    saveUpdatedContent(updatedContent);
     toast.success("Applied enhanced bullet!");
   };
 
   const applyEnhancedProjectBullets = (projIdx, enhancedBullets) => {
-    setContent((prev) => {
-      const newProjects = [...(prev.projects || [])];
-      if (newProjects[projIdx]) {
-        // Safety check: ensure enhancedBullets is an array
-        const bullets = Array.isArray(enhancedBullets) ? enhancedBullets : [];
-        newProjects[projIdx] = {
-          ...newProjects[projIdx],
-          bullets: bullets,
-          description: bullets.map(b => `• ${b}`).join('\n')
-        };
-      }
-      return { ...prev, projects: newProjects };
-    });
+    const newProjects = [...(content.projects || [])];
+    if (newProjects[projIdx]) {
+      const bullets = Array.isArray(enhancedBullets) ? enhancedBullets : [];
+      newProjects[projIdx] = {
+        ...newProjects[projIdx],
+        bullets: bullets,
+        description: bullets.map(b => `• ${b}`).join('\n')
+      };
+    }
+    const updatedContent = { ...content, projects: newProjects };
+    setContent(updatedContent);
+    saveUpdatedContent(updatedContent);
     toast.success("Applied enhanced project bullets!");
   };
 
   const applySingleEnhancedProjectBullet = (projIdx, bulletIdx, enhancedText) => {
-    setContent((prev) => {
-      const newProjects = [...(prev.projects || [])];
-      if (newProjects[projIdx]) {
-        const newBullets = [...(newProjects[projIdx].bullets || [])];
-        if (bulletIdx < newBullets.length) {
-          newBullets[bulletIdx] = enhancedText;
-        } else {
-          newBullets.push(enhancedText);
-        }
-        newProjects[projIdx] = { 
-          ...newProjects[projIdx], 
-          bullets: newBullets,
-          description: newBullets.map(b => `• ${b}`).join('\n')
-        };
+    const newProjects = [...(content.projects || [])];
+    if (newProjects[projIdx]) {
+      const newBullets = [...(newProjects[projIdx].bullets || [])];
+      if (bulletIdx < newBullets.length) {
+        newBullets[bulletIdx] = enhancedText;
+      } else {
+        newBullets.push(enhancedText);
       }
-      return { ...prev, projects: newProjects };
-    });
+      newProjects[projIdx] = { 
+        ...newProjects[projIdx], 
+        bullets: newBullets,
+        description: newBullets.map(b => `• ${b}`).join('\n')
+      };
+    }
+    const updatedContent = { ...content, projects: newProjects };
+    setContent(updatedContent);
+    saveUpdatedContent(updatedContent);
     toast.success("Applied enhanced project bullet!");
   };
 
@@ -338,17 +516,24 @@ export default function ResumeEditor() {
     const newContent = { ...content };
     
     if (enhancementReport.summary_rewrite) {
-      newContent.summary = enhancementReport.summary_rewrite;
+      let summaryText = enhancementReport.summary_rewrite.trim();
+      if (summaryText && !summaryText.endsWith(".")) {
+        summaryText += ".";
+      }
+      newContent.summary = summaryText;
     }
     
     if (enhancementReport.enhanced_experience && newContent.experience) {
-      enhancementReport.enhanced_experience.forEach((item) => {
-        const expIdx = newContent.experience.findIndex(
+      enhancementReport.enhanced_experience.forEach((item, idx) => {
+        let expIdx = newContent.experience.findIndex(
           (e) =>
             e.company?.toLowerCase()?.trim() === item.company?.toLowerCase()?.trim() ||
             e.title?.toLowerCase()?.trim() === item.role?.toLowerCase()?.trim()
         );
-        if (expIdx !== -1) {
+        if (expIdx === -1 && newContent.experience[idx]) {
+          expIdx = idx;
+        }
+        if (expIdx !== -1 && newContent.experience[expIdx]) {
           newContent.experience[expIdx] = {
             ...newContent.experience[expIdx],
             bullets: item.enhanced_bullets
@@ -358,22 +543,36 @@ export default function ResumeEditor() {
     }
 
     if (enhancementReport.enhanced_projects && newContent.projects) {
-      enhancementReport.enhanced_projects.forEach((item) => {
-        const projIdx = newContent.projects.findIndex(
+      enhancementReport.enhanced_projects.forEach((item, idx) => {
+        let projIdx = newContent.projects.findIndex(
           (p) => p.name?.toLowerCase()?.trim() === item.name?.toLowerCase()?.trim()
         );
-        if (projIdx !== -1) {
-          // Backend returns enhanced_description (string), not enhanced_bullets (array)
-          const enhancedDesc = item.enhanced_description || item.original_description || '';
+        if (projIdx === -1 && newContent.projects[idx]) {
+          projIdx = idx;
+        }
+        if (projIdx !== -1 && newContent.projects[projIdx]) {
+          const bullets = Array.isArray(item.enhanced_bullets) ? item.enhanced_bullets : [];
           newContent.projects[projIdx] = {
             ...newContent.projects[projIdx],
-            description: enhancedDesc
+            bullets: bullets,
+            description: bullets.map(b => `• ${b}`).join('\n')
           };
         }
       });
     }
+
+    if (enhancementReport.missing_keywords && enhancementReport.missing_keywords.length > 0) {
+      const currentSkills = newContent.skills || [];
+      const skillsToAdd = enhancementReport.missing_keywords.filter(
+        (kw) => !currentSkills.some((s) => s.toLowerCase().trim() === kw.toLowerCase().trim())
+      );
+      if (skillsToAdd.length > 0) {
+        newContent.skills = [...currentSkills, ...skillsToAdd];
+      }
+    }
     
     setContent(newContent);
+    saveUpdatedContent(newContent);
     toast.success("All enhancements applied successfully!");
     setShowEnhanceModal(false);
   };
@@ -383,7 +582,11 @@ export default function ResumeEditor() {
     const newContent = { ...content };
     
     if (id === "summary") {
-      newContent.summary = opt.optimized_text;
+      let summaryText = opt.optimized_text ? opt.optimized_text.trim() : "";
+      if (summaryText && !summaryText.endsWith(".")) {
+        summaryText += ".";
+      }
+      newContent.summary = summaryText;
     } else if (id.startsWith("exp_")) {
       const parts = id.split("_");
       const expIdx = parseInt(parts[1], 10);
@@ -403,11 +606,17 @@ export default function ResumeEditor() {
       if (newContent.projects && newContent.projects[projIdx]) {
         const newProj = [...newContent.projects];
         newProj[projIdx].description = opt.optimized_text;
+        const bulletLines = opt.optimized_text
+          .split(/[\n•*-]+/)
+          .map(line => line.trim())
+          .filter(Boolean);
+        newProj[projIdx].bullets = bulletLines;
         newContent.projects = newProj;
       }
     }
     
     setContent(newContent);
+    saveUpdatedContent(newContent);
     setOptimizations((prev) => prev.filter((o) => o.id !== id));
     toast.success("Applied optimization!");
   };
@@ -468,7 +677,10 @@ export default function ResumeEditor() {
         const res = await seekerAPI.exportDraftPdf(resumeId);
         if (res.downloadUrl) {
           const link = document.createElement("a");
-          link.href = res.downloadUrl;
+          const fullUrl = res.downloadUrl.startsWith("http") 
+            ? res.downloadUrl 
+            : `${API_HOST}${res.downloadUrl}`;
+          link.href = fullUrl;
           link.setAttribute("download", `${(draftTitle || "resume").replace(/\s+/g, "_")}.pdf`);
           document.body.appendChild(link);
           link.click();
@@ -628,7 +840,7 @@ export default function ResumeEditor() {
       }));
 
       toast.success("Set as Active Profile Resume!", { id: "activate" });
-      navigate("/profile");
+      navigate("/jobs/profile");
     } catch (err) {
       console.error(err);
       toast.error("Activation failed: " + err.message, { id: "activate" });
@@ -671,8 +883,26 @@ export default function ResumeEditor() {
             className="text-base font-semibold bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-2 py-0.5"
             placeholder="Untitled Resume"
           />
+          <span className={`text-[10px] ml-2 px-2 py-0.5 rounded-full font-medium transition-all ${
+            autoSaveStatus === "Saved" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+            autoSaveStatus === "Saving..." ? "bg-blue-500/10 text-blue-600 animate-pulse" :
+            "bg-destructive/10 text-destructive"
+          }`}>
+            {autoSaveStatus}
+          </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowVersionsPanel(!showVersionsPanel)}
+            className={`inline-flex items-center gap-1.5 pill border px-4 py-2 text-xs font-semibold transition-all ${
+              showVersionsPanel 
+                ? "bg-primary/10 text-primary border-primary/20" 
+                : "border-border bg-background hover:bg-muted"
+            }`}
+          >
+            <History className="h-3.5 w-3.5" />
+            Versions
+          </button>
           <button
             disabled={saveLoading}
             onClick={() => handleSaveDraft(false)}
@@ -700,21 +930,36 @@ export default function ResumeEditor() {
               <Sparkles className="h-4 w-4 text-primary" />
               <span>Resume Content</span>
             </div>
-            <select
-              value={templateId}
-              onChange={(e) => {
-                setTemplateId(e.target.value);
-                // Trigger auto-save on template change
-                setTimeout(() => handleSaveDraft(true), 100);
-              }}
-              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
-            >
-              {Object.keys(TEMPLATE_META).map((id) => (
-                <option key={id} value={id}>
-                  {TEMPLATE_META[id].name} Template
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={templateId}
+                onChange={(e) => {
+                  setTemplateId(e.target.value);
+                  // Trigger auto-save on template change
+                  setTimeout(() => handleSaveDraft(true), 100);
+                }}
+                className="rounded-full border border-border bg-background px-2.5 py-1.5 text-xs font-semibold focus:border-primary focus:outline-none"
+              >
+                {Object.keys(TEMPLATE_META).map((id) => (
+                  <option key={id} value={id}>
+                    {TEMPLATE_META[id].name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={content.columns || 1}
+                onChange={(e) => {
+                  const cols = parseInt(e.target.value, 10);
+                  const updated = { ...content, columns: cols };
+                  setContent(updated);
+                  saveUpdatedContent(updated);
+                }}
+                className="rounded-full border border-border bg-background px-2.5 py-1.5 text-xs font-semibold focus:border-primary focus:outline-none"
+              >
+                <option value={1}>1 Col</option>
+                <option value={2}>2 Cols</option>
+              </select>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -1268,6 +1513,13 @@ export default function ResumeEditor() {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="p-2 border border-border bg-background hover:bg-muted text-foreground rounded-full transition-all flex items-center justify-center"
+                  title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                >
+                  {darkMode ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4" />}
+                </button>
+                <button
                   onClick={() => setShowAtsPanel(!showAtsPanel)}
                   className={`inline-flex items-center gap-1.5 pill border border-border px-4 py-2 text-xs font-semibold hover:bg-muted transition-all ${
                     showAtsPanel ? "bg-primary-soft text-primary border-primary/20" : "bg-background text-muted-foreground"
@@ -1290,6 +1542,100 @@ export default function ResumeEditor() {
               </div>
             </div>
           </main>
+
+        {/* VERSIONS PANEL */}
+        {showVersionsPanel && (
+          <aside className="w-[320px] border-l border-border bg-card flex flex-col overflow-hidden">
+            <div className="border-b border-border px-5 py-4 flex items-center justify-between bg-muted/20">
+              <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <History className="h-4 w-4 text-primary" />
+                <span>Version History</span>
+              </div>
+              <button
+                onClick={() => setShowVersionsPanel(false)}
+                className="text-xs text-muted-foreground hover:text-foreground font-semibold px-2 py-1 rounded-lg hover:bg-muted"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Save New Version snapshot */}
+              <div className="bg-muted/30 border border-border/60 p-3.5 rounded-2xl space-y-2.5">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                  Create Named Checkpoint
+                </span>
+                <input
+                  type="text"
+                  placeholder="e.g. Before AI Enhancements"
+                  value={newVersionName}
+                  onChange={(e) => setNewVersionName(e.target.value)}
+                  className="w-full text-xs font-medium px-3 py-2 bg-background border border-border rounded-xl focus:border-primary focus:outline-none"
+                />
+                <button
+                  onClick={handleSaveVersion}
+                  className="w-full bg-primary text-primary-foreground font-bold text-xs py-2 rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Save className="h-3.5 w-3.5" /> Save Backup
+                </button>
+              </div>
+
+              {/* Versions List */}
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                  Saved Snapshots
+                </span>
+                
+                {versionsLoading ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-2">
+                    <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                    <span className="text-xs text-muted-foreground">Loading checkpoints...</span>
+                  </div>
+                ) : versions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic text-center py-4 bg-muted/10 rounded-xl">
+                    No saved checkpoints. Create one above to preserve draft states.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {versions.map((v) => {
+                      const dt = new Date(v.createdAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      });
+                      return (
+                        <div key={v.id} className="border border-border/60 p-3 rounded-2xl bg-muted/10 flex flex-col gap-2 hover:bg-muted/20 transition-all">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-foreground block truncate" title={v.title}>
+                                {v.title}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <Clock className="h-3 w-3" /> {dt}
+                              </span>
+                            </div>
+                            {v.atsScore !== null && (
+                              <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full shrink-0">
+                                ATS {v.atsScore}%
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleRestoreVersion(v.id)}
+                            className="text-[10px] font-bold text-primary hover:underline self-end"
+                          >
+                            Restore snapshot ➔
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
+        )}
 
         {/* RIGHT PANEL: DYNAMIC ATS COMPATIBILITY AGENT */}
         {showAtsPanel && (
@@ -1321,20 +1667,33 @@ export default function ResumeEditor() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
-              {/* Target Job Header Indicator */}
-              {jobInfo && (
-                <div className="bg-primary/5 border border-primary/20 p-3.5 rounded-2xl flex flex-col gap-1">
-                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider flex items-center gap-1">
-                    <Target className="h-3 w-3" /> Job-Targeted Mode
+              {/* Optional Job Description Input */}
+              <div className="bg-muted/30 border border-border/60 p-3.5 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    <Target className="h-3 w-3 text-primary" /> Target Job Target
                   </span>
-                  <span className="text-xs font-semibold text-foreground">
-                    Tailoring for {jobInfo.job_title}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    at {jobInfo.company?.name || "Target Company"}
-                  </span>
+                  {jobInfo && (
+                    <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold">
+                      Job-Targeted Mode
+                    </span>
+                  )}
                 </div>
-              )}
+                {jobInfo && (
+                  <div className="text-xs font-semibold text-foreground leading-tight">
+                    {jobInfo.job_title} at {jobInfo.company?.name || "Target Company"}
+                  </div>
+                )}
+                <textarea
+                  value={targetJobDescription}
+                  onChange={(e) => {
+                    setTargetJobDescription(e.target.value);
+                  }}
+                  placeholder="Paste target job description or type a target job title (e.g. 'Frontend Developer') here to optimize your resume..."
+                  rows={4}
+                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-[11px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all leading-normal"
+                />
+              </div>
 
               {/* AI Optimize buttons */}
               <div className="px-1 space-y-2">
@@ -1407,8 +1766,29 @@ export default function ResumeEditor() {
                 <div className="space-y-6">
                   {/* Score Indicator */}
                   <div className="text-center bg-muted/40 border border-border/60 p-5 rounded-3xl flex flex-col items-center">
-                    <div className="relative w-24 h-24 rounded-full border-8 border-primary/10 bg-primary/5 flex items-center justify-center">
-                      <span className="text-2xl font-bold text-primary">{atsReport.overallScore}%</span>
+                    <div className="relative w-24 h-24 flex items-center justify-center">
+                      <svg className="absolute w-full h-full transform -rotate-90">
+                        <circle
+                          cx="48"
+                          cy="48"
+                          r="40"
+                          stroke="rgba(37, 99, 235, 0.1)"
+                          strokeWidth="8"
+                          fill="transparent"
+                        />
+                        <circle
+                          cx="48"
+                          cy="48"
+                          r="40"
+                          stroke="rgb(37, 99, 235)"
+                          strokeWidth="8"
+                          fill="transparent"
+                          strokeDasharray="251.2"
+                          strokeDashoffset={251.2 - (251.2 * (atsReport.overallScore || 0)) / 100}
+                          className="transition-all duration-500 ease-out"
+                        />
+                      </svg>
+                      <span className="text-2xl font-bold text-primary relative z-10">{atsReport.overallScore}%</span>
                     </div>
                     <h4 className="text-sm font-semibold mt-3">
                       {jobInfo ? "Job Match Score" : "ATS Score"}
@@ -1422,12 +1802,45 @@ export default function ResumeEditor() {
                   <div className="space-y-3.5">
                     <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Checks Breakdown</h5>
                     
-                    <BreakdownBar label="Formatting" score={atsReport.breakdown?.formatting?.score} />
-                    <BreakdownBar label="Section Structure" score={atsReport.breakdown?.structure?.score} />
-                    <BreakdownBar label="Keywords Optimization" score={atsReport.breakdown?.keywords?.score} />
-                    <BreakdownBar label="Achievement Quality" score={atsReport.breakdown?.content?.score} />
-                    <BreakdownBar label="Document Integrity" score={atsReport.breakdown?.integrity?.score} />
+                    <BreakdownBar label="Keyword Match (35%)" score={atsReport.detailed_breakdown?.keyword_match?.score ?? atsReport.breakdown?.keywords?.score} />
+                    <BreakdownBar label="Skills Match (25%)" score={atsReport.detailed_breakdown?.skills_match?.score ?? atsReport.breakdown?.integrity?.score} />
+                    <BreakdownBar label="Experience Relevance (15%)" score={atsReport.detailed_breakdown?.experience_relevance?.score ?? 70} />
+                    <BreakdownBar label="Project Relevance (10%)" score={atsReport.detailed_breakdown?.project_relevance?.score ?? 70} />
+                    <BreakdownBar label="Education Match (5%)" score={atsReport.detailed_breakdown?.education_match?.score ?? atsReport.breakdown?.structure?.score} />
+                    <BreakdownBar label="ATS Formatting (10%)" score={atsReport.detailed_breakdown?.ats_formatting?.score ?? atsReport.breakdown?.formatting?.score} />
                   </div>
+
+                  {/* Strengths & Weaknesses */}
+                  {(atsReport.strengths?.length > 0 || atsReport.weaknesses?.length > 0) && (
+                    <div className="space-y-3 border-t border-border/60 pt-4">
+                      {atsReport.strengths?.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider mb-1.5">Key Strengths</div>
+                          <ul className="space-y-1">
+                            {atsReport.strengths.map((str, idx) => (
+                              <li key={idx} className="flex gap-1.5 text-xs text-foreground items-start">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
+                                <span>{str}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {atsReport.weaknesses?.length > 0 && (
+                        <div className="mt-3.5">
+                          <div className="text-[10px] font-bold text-destructive/80 uppercase tracking-wider mb-1.5">Weaknesses / Gaps</div>
+                          <ul className="space-y-1">
+                            {atsReport.weaknesses.map((weak, idx) => (
+                              <li key={idx} className="flex gap-1.5 text-xs text-foreground items-start">
+                                <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+                                <span>{weak}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Target Keywords matching (Job-Targeted specific) */}
                   {jobInfo && atsReport.breakdown?.keywords && (
@@ -1632,28 +2045,123 @@ export default function ResumeEditor() {
                   {/* Original Score */}
                   <div className="flex flex-col items-center">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Original Score</span>
-                    <div className="w-16 h-16 rounded-full border-4 border-destructive/20 bg-destructive/5 flex items-center justify-center">
-                      <span className="text-lg font-bold text-destructive">{enhancementReport.ats_score_original}%</span>
+                    <div className="relative w-16 h-16 flex items-center justify-center">
+                      <svg className="absolute w-full h-full transform -rotate-90">
+                        <circle
+                          cx="32"
+                          cy="32"
+                          r="27"
+                          stroke="rgba(239, 68, 68, 0.1)"
+                          strokeWidth="5"
+                          fill="transparent"
+                        />
+                        <circle
+                          cx="32"
+                          cy="32"
+                          r="27"
+                          stroke="rgb(239, 68, 68)"
+                          strokeWidth="5"
+                          fill="transparent"
+                          strokeDasharray="169.6"
+                          strokeDashoffset={169.6 - (169.6 * (atsReport?.overallScore || 0)) / 100}
+                          className="transition-all duration-500 ease-out"
+                        />
+                      </svg>
+                      <span className="text-lg font-bold text-destructive relative z-10">{atsReport?.overallScore ?? enhancementReport.ats_score_original}%</span>
                     </div>
                   </div>
-                  
-                  {/* Arrow */}
+                              {/* Arrow */}
                   <div className="text-muted-foreground text-xl font-bold">➔</div>
 
                   {/* Enhanced Score */}
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider mb-2">Predicted Enhanced</span>
-                    <div className="w-20 h-20 rounded-full border-8 border-violet-500/20 bg-violet-500/5 flex items-center justify-center">
-                      <span className="text-xl font-bold text-violet-600 dark:text-violet-400">{enhancementReport.ats_score_enhanced}%</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const origScore = atsReport?.overallScore ?? enhancementReport.ats_score_original ?? 0;
+                    const enhScore = enhancementReport.ats_score_enhanced ?? 0;
+                    const isBoost = enhScore > origScore;
+                    const diff = enhScore - origScore;
+                    // Colors
+                    const ringBg = isBoost ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)";
+                    const ringFg = isBoost ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)";
+                    const textColor = isBoost ? "text-green-600 dark:text-green-400" : "text-destructive";
+                    const labelColor = isBoost ? "text-green-600 dark:text-green-400" : "text-destructive";
+                    return (
+                      <div className="flex flex-col items-center">
+                        <span className={`text-[10px] font-bold ${labelColor} uppercase tracking-wider mb-2`}>
+                          {isBoost ? "✦ Predicted Enhanced" : "⚠ Predicted Enhanced"}
+                        </span>
+                        <div className="relative w-20 h-20 flex items-center justify-center">
+                          <svg className="absolute w-full h-full transform -rotate-90">
+                            <circle
+                              cx="40"
+                              cy="40"
+                              r="34"
+                              stroke={ringBg}
+                              strokeWidth="6"
+                              fill="transparent"
+                            />
+                            <circle
+                              cx="40"
+                              cy="40"
+                              r="34"
+                              stroke={ringFg}
+                              strokeWidth="6"
+                              fill="transparent"
+                              strokeDasharray="213.6"
+                              strokeDashoffset={213.6 - (213.6 * (enhScore || 0)) / 100}
+                              className="transition-all duration-500 ease-out"
+                            />
+                          </svg>
+                          <span className={`text-xl font-bold ${textColor} relative z-10`}>{enhScore}%</span>
+                        </div>
+                        <span className={`text-[10px] font-bold mt-1 ${isBoost ? 'text-green-600' : 'text-destructive'}`}>
+                          {isBoost ? `+${diff}% boost` : `${diff}% (no gain)`}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                <div className="max-w-md text-center md:text-left">
-                  <h4 className="font-semibold text-sm text-foreground">ATS Score Boosted by +{enhancementReport.ats_score_enhanced - enhancementReport.ats_score_original}%!</h4>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    By adopting these AI enhancements (rewritten bullets, missing keywords, and professional summary), your resume has a significantly higher chance of passing automated screening filters.
-                  </p>
+                <div className="max-w-md text-center md:text-left space-y-3">
+                  {(() => {
+                    const origScore = atsReport?.overallScore ?? enhancementReport.ats_score_original ?? 0;
+                    const enhScore = enhancementReport.ats_score_enhanced ?? 0;
+                    const diff = enhScore - origScore;
+                    const isBoost = diff > 0;
+                    
+                    const keywordsAddedCount = enhancementReport.keywords_added?.length || 0;
+                    const skillsImprovedCount = enhancementReport.skills_improved || keywordsAddedCount;
+                    const sectionsCount = enhancementReport.sections_improved?.length || 0;
+                    const sectionsImprovedNames = enhancementReport.sections_improved?.join(", ") || "None";
+                    
+                    return (
+                      <>
+                        <h4 className={`font-semibold text-sm ${isBoost ? 'text-green-700 dark:text-green-400' : 'text-destructive'}`}>
+                          {isBoost
+                            ? `🚀 ATS Score Boosted by +${diff}%! (+${enhancementReport.improvement_percentage || 0}% boost)`
+                            : `⚠ No improvement detected`
+                          }
+                        </h4>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          By adopting these AI enhancements, your resume passes more automated filters.
+                        </p>
+                        
+                        <div className="grid grid-cols-2 gap-2 border-t border-border/40 pt-2.5 text-left">
+                          <div className="bg-background/40 p-2 rounded-xl border border-border/50">
+                            <span className="text-[9px] text-muted-foreground uppercase tracking-wider block">Keywords Added</span>
+                            <span className="text-xs font-bold text-foreground">{keywordsAddedCount} found in JD</span>
+                          </div>
+                          <div className="bg-background/40 p-2 rounded-xl border border-border/50">
+                            <span className="text-[9px] text-muted-foreground uppercase tracking-wider block">Skills Improved</span>
+                            <span className="text-xs font-bold text-foreground">{skillsImprovedCount} target skills</span>
+                          </div>
+                          <div className="bg-background/40 p-2 rounded-xl border border-border/50 col-span-2">
+                            <span className="text-[9px] text-muted-foreground uppercase tracking-wider block">Sections Optimized ({sectionsCount})</span>
+                            <span className="text-xs font-bold text-foreground truncate block">{sectionsImprovedNames}</span>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1667,12 +2175,20 @@ export default function ResumeEditor() {
                     <div className="border border-border/60 rounded-2xl bg-card overflow-hidden shadow-elevation-1">
                       <div className="bg-muted/30 px-5 py-3 border-b border-border/40 flex items-center justify-between">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">AI Professional Summary Rewrite</span>
-                        <button
-                          onClick={() => applyEnhancedSummary(enhancementReport.summary_rewrite)}
-                          className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
-                        >
-                          <CheckCircle2 className="h-3 w-3" /> Apply Summary
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => applyEnhancedSummary(enhancementReport.summary_rewrite)}
+                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                          >
+                            <CheckCircle2 className="h-3 w-3" /> Apply Summary
+                          </button>
+                          <button
+                            onClick={dismissEnhancedSummary}
+                            className="px-3 py-1 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                          >
+                            Reject
+                          </button>
+                        </div>
                       </div>
                       <div className="p-4 space-y-3">
                         <div className="bg-red-500/5 p-3 rounded-xl border border-red-500/10">
@@ -1711,14 +2227,22 @@ export default function ResumeEditor() {
                                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Company / Role</span>
                                 <span className="text-xs font-bold text-foreground">{item.company} • {item.role}</span>
                               </div>
-                              {matchedIdx !== -1 && (
+                              <div className="flex gap-2">
+                                {matchedIdx !== -1 && (
+                                  <button
+                                    onClick={() => applyEnhancedBullets(matchedIdx, item.enhanced_bullets)}
+                                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" /> Apply Role Bullets
+                                  </button>
+                                )}
                                 <button
-                                  onClick={() => applyEnhancedBullets(matchedIdx, item.enhanced_bullets)}
-                                  className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                                  onClick={() => dismissEnhancedExperience(idx)}
+                                  className="px-3 py-1 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
                                 >
-                                  <CheckCircle2 className="h-3 w-3" /> Apply Role Bullets
+                                  Reject
                                 </button>
-                              )}
+                              </div>
                             </div>
                             <div className="p-4 space-y-4">
                               {item.enhanced_bullets?.map((enhancedB, bIdx) => {
@@ -1769,14 +2293,22 @@ export default function ResumeEditor() {
                                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Project Name</span>
                                   <span className="text-xs font-bold text-foreground">{item.name}</span>
                                 </div>
-                                {matchedIdx !== -1 && (
+                                <div className="flex gap-2">
+                                  {matchedIdx !== -1 && (
+                                    <button
+                                      onClick={() => applyEnhancedProjectBullets(matchedIdx, item.enhanced_bullets)}
+                                      className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                                    >
+                                      <CheckCircle2 className="h-3 w-3" /> Apply Project Bullets
+                                    </button>
+                                  )}
                                   <button
-                                    onClick={() => applyEnhancedProjectBullets(matchedIdx, item.enhanced_bullets)}
-                                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                                    onClick={() => dismissEnhancedProject(idx)}
+                                    className="px-3 py-1 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
                                   >
-                                    <CheckCircle2 className="h-3 w-3" /> Apply Project Bullets
+                                    Reject
                                   </button>
-                                )}
+                                </div>
                               </div>
                               <div className="p-4 space-y-4">
                                 {item.enhanced_bullets?.map((enhancedB, bIdx) => {
@@ -1819,7 +2351,17 @@ export default function ResumeEditor() {
                 <div className="space-y-6">
                   {/* 1. Missing Keywords */}
                   <div className="border border-border/60 rounded-2xl bg-card p-4 space-y-3">
-                    <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Missing Keywords (ATS)</h5>
+                    <div className="flex justify-between items-center mb-1">
+                      <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Missing Keywords (ATS)</h5>
+                      {enhancementReport.missing_keywords && enhancementReport.missing_keywords.length > 0 && (
+                        <button
+                          onClick={applyMissingKeywords}
+                          className="text-[10px] text-primary hover:underline font-semibold"
+                        >
+                          Add All to Skills
+                        </button>
+                      )}
+                    </div>
                     {enhancementReport.missing_keywords && enhancementReport.missing_keywords.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {enhancementReport.missing_keywords.map((kw, i) => (
@@ -1956,7 +2498,7 @@ function IconBtn({ children, onClick }) {
 function BreakdownBar({ label, score = 100 }) {
   let color = "bg-primary";
   if (score < 50) color = "bg-destructive";
-  else if (score < 80) color = "bg-warning";
+  else if (score < 80) color = "bg-amber-500";
   else color = "bg-[var(--google-green)]";
 
   return (

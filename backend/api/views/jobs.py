@@ -360,9 +360,17 @@ def scan_safety_arbitrary_public(request):
         except Exception:
             data = request.POST
 
+        url_val = data.get("url", "").strip()
         job_title = data.get("job_title", "").strip()
         job_description = data.get("job_description", "").strip()
         company_name = data.get("company_name", "").strip() or "Unknown Company"
+
+        if url_val and "linkedin.com" in url_val.lower():
+            from api.services.linkedin_scraper import fetch_linkedin_job_details
+            details = fetch_linkedin_job_details(url_val)
+            job_title = details.get("job_title")
+            job_description = details.get("job_description")
+            company_name = details.get("company_name", company_name)
 
         if not job_title or not job_description:
             return JsonResponse(error_response("Job title and description are required"), status=400)
@@ -376,9 +384,13 @@ def scan_safety_arbitrary_public(request):
         ai_prob = analysis.get("ai_probability", 10)
         plagiarism = analysis.get("plagiarism_score", 5)
 
-        status_str = "Verified Clean"
+        status_str = analysis.get("status") or "Verified Clean"
         if originality < 70 or plagiarism > 30 or analysis.get("ats_manipulation_detected", False):
             status_str = "Suspicious Listing"
+
+        flags = analysis.get("manipulation_flags", []) or ["Safety Audit Checked"]
+        if url_val and "linkedin.com" in url_val.lower():
+            flags = [f"Source: LinkedIn"] + [f for f in flags if f != "Safety Audit Checked"]
 
         return JsonResponse(success_response({
             "job_title": job_title,
@@ -387,7 +399,10 @@ def scan_safety_arbitrary_public(request):
             "ai_probability": ai_prob,
             "plagiarism_score": plagiarism,
             "status": status_str,
-            "flags": analysis.get("manipulation_flags", []) or ["Safety Audit Checked"],
+            "risk_level": analysis.get("risk_level", "Low"),
+            "verified_company": analysis.get("verified_company", "Yes"),
+            "flags": flags,
+            "detailed_checks": analysis.get("detailed_checks", {}),
             "summary": analysis.get("summary", "Safety report generated successfully.")
         }))
 

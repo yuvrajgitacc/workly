@@ -14,6 +14,8 @@ export default function SessionsPage() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [sortOrder, setSortOrder] = useState("newest");
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const POPULAR_ROLES = ["React Developers", "Backend Python Engineer", "Product Design Lead", "Data Analyst", "Sales Representative", "DevOps Engineer"];
   const menuRef = useRef(null);
 
   // Click outside to close dropdown menu
@@ -70,14 +72,31 @@ export default function SessionsPage() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center h-11 bg-muted rounded-full px-4 gap-2 flex-1 min-w-[220px] max-w-md focus-within:bg-card focus-within:shadow-google-1 transition">
-          <Search size={18} className="text-muted-foreground" />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search sessions"
-            className="bg-transparent outline-none flex-1 text-sm text-foreground placeholder:text-muted-foreground"
-          />
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <div className="flex items-center h-11 bg-muted rounded-full px-4 gap-2 w-full focus-within:bg-card focus-within:shadow-google-1 transition">
+            <Search size={18} className="text-muted-foreground" />
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              placeholder="Search sessions"
+              className="bg-transparent outline-none flex-1 text-sm text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+          {showSuggestions && (
+            <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+              {POPULAR_ROLES.map((s, i) => (
+                <div 
+                  key={i} 
+                  onMouseDown={() => setSearchTerm(s)}
+                  className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left"
+                >
+                  {s}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1 bg-muted rounded-full p-1 relative z-0">
           {["All", "Active", "Completed", "Draft"].map((f) => {

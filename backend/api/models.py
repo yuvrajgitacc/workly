@@ -248,6 +248,7 @@ class FraudScanLog(models.Model):
     plagiarism_score = models.IntegerField(default=0)
     status = models.CharField(max_length=100, default="Verified Clean")
     portfolios = models.JSONField(default=list)
+    detailed_checks = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -301,6 +302,21 @@ class ResumeDraft(models.Model):
 
     def __str__(self):
         return f"Draft '{self.title}' for {self.seeker.full_name}"
+
+
+class ResumeVersion(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    draft = models.ForeignKey(ResumeDraft, on_delete=models.CASCADE, db_column="draft_id", related_name="versions")
+    title = models.CharField(max_length=255)
+    content = models.JSONField(default=dict)
+    ats_score = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "resume_versions"
+
+    def __str__(self):
+        return f"Version '{self.title}' of Draft '{self.draft.title}'"
 
 
 class JobApplication(models.Model):

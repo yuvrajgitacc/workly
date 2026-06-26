@@ -143,7 +143,7 @@ export default function DeveloperRegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg flex items-center justify-center font-sans p-6 pb-20 pt-10" style={{ '--accent': '#2563eb', '--accent-foreground': '#ffffff' }}>
+    <div className="min-h-screen bg-bg flex items-center justify-center font-sans p-6 pb-20 pt-10 developer-page">
       
       {/* STEP 1 */}
       {step === 1 && (
@@ -227,7 +227,7 @@ export default function DeveloperRegisterPage() {
                disabled={loading}
                onClick={() => {
                  const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
-                 const redirectUri = encodeURIComponent(import.meta.env.VITE_GITHUB_REDIRECT_URI);
+                 const redirectUri = encodeURIComponent(window.location.origin + '/auth/github/callback');
                  window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=read:user,user:email&state=developer`;
                }}
                className="w-full flex items-center justify-center gap-2.5 bg-white border border-gray-200 text-charcoal py-3.5 rounded-xl font-bold tracking-wide hover:bg-gray-50 transition-all shadow-sm hover:-translate-y-0.5 disabled:opacity-70 disabled:hover:translate-y-0"

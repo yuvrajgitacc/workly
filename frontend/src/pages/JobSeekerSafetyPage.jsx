@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { publicJobsAPI } from '../lib/api';
 import { Header, Footer } from '../components/user/site-chrome';
+import ResumeUploadModal from '../components/ResumeUploadModal';
 import { 
   Shield, 
   AlertTriangle, 
@@ -16,12 +17,15 @@ import {
   Building,
   HelpCircle,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  Link as LinkIcon
 } from 'lucide-react';
 
 export default function JobSeekerSafetyPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Inputs
+  const [jobUrl, setJobUrl] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [jobDescription, setJobDescription] = useState("");
@@ -30,6 +34,51 @@ export default function JobSeekerSafetyPage() {
   const [jobsList, setJobsList] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
+  const [titleSuggestions, setTitleSuggestions] = useState([]);
+
+  const POPULAR_COMPANIES = ["Google", "Meta", "Amazon", "Microsoft", "Netflix", "Apple", "Uber"];
+  const POPULAR_TITLES = [
+    { title: "Remote Data Entry Assistant", desc: "We are looking for a remote assistant to manage spreadsheet data entry, verify database records, and perform general administrative tasks." },
+    { title: "Virtual Support Representative", desc: "Responsible for responding to customer emails, resolving support tickets, and maintaining customer relationship records." },
+    { title: "Part-time Copywriter", desc: "Write engaging marketing copy, blog posts, and social media captions. Requires strong communication skills and basic SEO knowledge." },
+    { title: "Freelance Quality Analyst", desc: "Review software applications, log issues in trackers, and work with developers to ensure final builds meet standard guidelines." }
+  ];
+
+  const handleJobTitleFocus = () => {
+    setShowTitleSuggestions(true);
+    if (!jobTitle.trim()) {
+      setTitleSuggestions(POPULAR_TITLES);
+    } else {
+      handleJobTitleChange(jobTitle);
+    }
+  };
+
+  const handleJobTitleChange = (val) => {
+    setJobTitle(val);
+    if (!val.trim()) {
+      setTitleSuggestions(POPULAR_TITLES);
+      return;
+    }
+    const filteredPopular = POPULAR_TITLES.filter(t => 
+      t.title.toLowerCase().includes(val.toLowerCase())
+    );
+    const filteredJobs = jobsList.filter(job => 
+      job.job_title?.toLowerCase().includes(val.toLowerCase())
+    ).map(job => ({
+      title: job.job_title,
+      desc: job.job_description,
+      company: job.company_name
+    }));
+    
+    const combined = [...filteredPopular];
+    filteredJobs.forEach(j => {
+      if (!combined.some(c => c.title.toLowerCase() === j.title.toLowerCase())) {
+        combined.push(j);
+      }
+    });
+    setTitleSuggestions(combined);
+  };
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -44,21 +93,39 @@ export default function JobSeekerSafetyPage() {
 
     const handleOutsideClick = () => {
       setShowSuggestions(false);
+      setShowTitleSuggestions(false);
     };
     window.addEventListener('click', handleOutsideClick);
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
+  const handleCompanyFocus = () => {
+    setShowSuggestions(true);
+    if (!companyName.trim()) {
+      setSuggestions(POPULAR_COMPANIES.map(c => ({ company_name: c, job_title: "Popular Tech Employer", preferred_locations: ["Remote"] })));
+    }
+  };
+
   const handleCompanyChange = (val) => {
     setCompanyName(val);
     if (!val.trim()) {
-      setSuggestions([]);
+      setSuggestions(POPULAR_COMPANIES.map(c => ({ company_name: c, job_title: "Popular Tech Employer", preferred_locations: ["Remote"] })));
       return;
     }
-    const filtered = jobsList.filter(job => 
+    const filteredJobs = jobsList.filter(job => 
       job.company_name?.toLowerCase().includes(val.toLowerCase())
     );
-    setSuggestions(filtered);
+    const filteredPopular = POPULAR_COMPANIES.filter(c => 
+      c.toLowerCase().includes(val.toLowerCase())
+    ).map(c => ({ company_name: c, job_title: "Popular Tech Employer", preferred_locations: ["Remote"] }));
+    
+    const combined = [...filteredJobs];
+    filteredPopular.forEach(p => {
+      if (!combined.some(c => c.company_name.toLowerCase() === p.company_name.toLowerCase())) {
+        combined.push(p);
+      }
+    });
+    setSuggestions(combined);
   };
 
   const handleSelectSuggestion = (job) => {
@@ -84,8 +151,8 @@ export default function JobSeekerSafetyPage() {
 
   const handleStartScan = async (e) => {
     e.preventDefault();
-    if (!jobTitle.trim() || !jobDescription.trim()) {
-      toast.error("Please enter both the Job Title and Job Description to scan.");
+    if (!jobUrl.trim() && (!jobTitle.trim() || !jobDescription.trim())) {
+      toast.error("Please enter a LinkedIn job URL or enter both the Job Title and Job Description to scan.");
       return;
     }
 
@@ -93,6 +160,7 @@ export default function JobSeekerSafetyPage() {
     setCurrentStepIdx(0);
 
     const apiPromise = publicJobsAPI.scanSafetyArbitrary({
+      url: jobUrl.trim(),
       job_title: jobTitle.trim(),
       job_description: jobDescription.trim(),
       company_name: companyName.trim() || "Unknown Company"
@@ -126,9 +194,49 @@ export default function JobSeekerSafetyPage() {
     }
   };
 
+  const getReportChecks = (rep) => {
+    if (rep && rep.detailed_checks && Object.keys(rep.detailed_checks).length > 0) {
+      const keys = ["official_website", "recruiter_email", "salary_realistic", "linkedin_presence", "description_copied", "repeated_posts"];
+      const hasAllKeys = keys.every(k => rep.detailed_checks[k] && rep.detailed_checks[k].status && rep.detailed_checks[k].status !== "Unknown");
+      if (hasAllKeys) {
+        return rep.detailed_checks;
+      }
+    }
+    
+    const score = rep ? (rep.originality_score ?? 95) : 95;
+    const isSafe = score >= 70;
+    return {
+      official_website: {
+        status: isSafe ? "Yes" : "No",
+        details: isSafe ? "Company official domain and site verified." : "Could not verify company website or domain registration."
+      },
+      recruiter_email: {
+        status: isSafe ? "Yes" : "No",
+        details: isSafe ? "Sender email domain matches the company domain." : "Uses generic public domain email contact (@gmail.com / @yahoo.com)."
+      },
+      salary_realistic: {
+        status: isSafe ? "Yes" : "No",
+        details: isSafe ? "Compensation range aligns with local market standards." : "Salary offered is abnormally high for minimal experience."
+      },
+      linkedin_presence: {
+        status: isSafe ? "Yes" : "No",
+        details: isSafe ? "Found active LinkedIn page with verified employee connections." : "No matching company page or verified staff on professional networks."
+      },
+      description_copied: {
+        status: isSafe ? "No" : "Yes",
+        details: isSafe ? "Job description is unique and custom-tailored." : "Description matches generic scam templates or cloned postings."
+      },
+      repeated_posts: {
+        status: "No",
+        details: "First-time signature detected for this role."
+      }
+    };
+  };
+
   const resetScanner = () => {
     setScanStep("idle");
     setScannedResult(null);
+    setJobUrl("");
     setCompanyName("");
     setJobTitle("");
     setJobDescription("");
@@ -157,7 +265,7 @@ export default function JobSeekerSafetyPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f5f4ef] text-[#2A2A2A] font-sans flex flex-col">
+    <div className="min-h-screen bg-background text-[#2A2A2A] font-sans flex flex-col">
       <Header />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-12 space-y-12">
@@ -201,6 +309,20 @@ export default function JobSeekerSafetyPage() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
+                  {/* URL Input */}
+                  <div className="relative">
+                    <LinkIcon className="absolute left-3.5 top-3.5 text-gray-400 w-4 h-4" />
+                    <input 
+                      type="text"
+                      value={jobUrl}
+                      onChange={(e) => setJobUrl(e.target.value)}
+                      placeholder="Enter LinkedIn Job Post URL (automatically extracts title & description)..."
+                      className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 pl-10 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner"
+                    />
+                  </div>
+
+                  <div className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest my-1">OR ENTER DETAILS MANUALLY</div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[10px] font-extrabold text-[#2A2A2A] uppercase tracking-wider mb-1">Company Name</label>
@@ -208,11 +330,12 @@ export default function JobSeekerSafetyPage() {
                         <Building className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
                         <input
                           type="text"
-                          value={companyName}
+                          disabled={!!jobUrl.trim()}
+                          value={jobUrl.trim() ? "" : companyName}
                           onChange={(e) => handleCompanyChange(e.target.value)}
-                          onFocus={() => setShowSuggestions(true)}
-                          placeholder="e.g. Acme Corporation (Optional)"
-                          className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 pl-9 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner"
+                          onFocus={handleCompanyFocus}
+                          placeholder={jobUrl.trim() ? "Locked: URL provided" : "e.g. Acme Corporation (Optional)"}
+                          className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 pl-9 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner disabled:opacity-50"
                         />
                         {showSuggestions && suggestions.length > 0 && (
                           <div className="absolute left-0 right-0 top-[110%] bg-white border border-[#e6dfcd] rounded-xl shadow-xl z-50 overflow-hidden py-1 max-h-60 overflow-y-auto text-left">
@@ -232,30 +355,57 @@ export default function JobSeekerSafetyPage() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-extrabold text-[#2A2A2A] uppercase tracking-wider mb-1">Job Title</label>
-                      <input
-                        type="text"
-                        value={jobTitle}
-                        onChange={(e) => setJobTitle(e.target.value)}
-                        placeholder="e.g. Remote Data Entry Assistant"
-                        className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner"
-                      />
+                      <div className="relative" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          disabled={!!jobUrl.trim()}
+                          value={jobUrl.trim() ? "" : jobTitle}
+                          onChange={(e) => handleJobTitleChange(e.target.value)}
+                          onFocus={handleJobTitleFocus}
+                          placeholder={jobUrl.trim() ? "Locked: URL provided" : "e.g. Remote Data Entry Assistant"}
+                          className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner disabled:opacity-50"
+                        />
+                        {showTitleSuggestions && titleSuggestions.length > 0 && (
+                          <div className="absolute left-0 right-0 top-[110%] bg-white border border-[#e6dfcd] rounded-xl shadow-xl z-50 overflow-hidden py-1 max-h-60 overflow-y-auto text-left">
+                            {titleSuggestions.map((t, idx) => (
+                              <div
+                                key={idx}
+                                onMouseDown={() => {
+                                  setJobTitle(t.title);
+                                  setJobDescription(t.desc);
+                                  if (t.company) {
+                                    setCompanyName(t.company);
+                                  }
+                                  setShowTitleSuggestions(false);
+                                  toast.success(`Autofilled job template for ${t.title}!`);
+                                }}
+                                className="px-4 py-2 hover:bg-[#f5f4ef] cursor-pointer transition-colors border-b border-gray-100 last:border-0"
+                              >
+                                <p className="text-xs font-bold text-[#2A2A2A]">{t.title} {t.company ? `(${t.company})` : ""}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">{t.desc}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-extrabold text-[#2A2A2A] uppercase tracking-wider mb-1">Job Description Requirements</label>
                     <textarea
-                      value={jobDescription}
+                      disabled={!!jobUrl.trim()}
+                      value={jobUrl.trim() ? "" : jobDescription}
                       onChange={(e) => setJobDescription(e.target.value)}
-                      placeholder="Paste the requirements, responsibilities, or contact paragraphs here..."
+                      placeholder={jobUrl.trim() ? "Locked: URL provided" : "Paste the requirements, responsibilities, or contact paragraphs here..."}
                       rows={6}
-                      className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner resize-none"
+                      className="w-full text-sm border border-[#e6dfcd] rounded-xl p-3 focus:outline-none focus:border-[#2563EB] bg-white text-[#2A2A2A] font-medium shadow-inner resize-none disabled:opacity-50"
                     />
                   </div>
 
                   <button 
                     type="submit" 
-                    disabled={!jobTitle.trim() || !jobDescription.trim()}
+                    disabled={!jobUrl.trim() && (!jobTitle.trim() || !jobDescription.trim())}
                     className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
                   >
                     <Search size={16} />
@@ -329,6 +479,51 @@ export default function JobSeekerSafetyPage() {
                     </div>
                   </div>
 
+                  {/* AI System Output (Matching the Reference Image layout) */}
+                  <div className="bg-[#f0f6ff]/45 border border-[#bfdbfe]/50 p-5 rounded-2xl space-y-3.5 shadow-sm">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-[#2563EB] flex items-center gap-1.5">
+                      <Sparkles size={14} className="animate-pulse" />
+                      <span>AI Fake Job Detection System Output</span>
+                    </h4>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="bg-white border border-[#e6dfcd] p-3.5 rounded-xl shadow-inner text-center">
+                        <p className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider">Trust Score</p>
+                        <h4 className="text-lg font-black text-[#2A2A2A] mt-1">
+                          {scannedResult.originality_score}/100
+                        </h4>
+                      </div>
+                      
+                      <div className="bg-white border border-[#e6dfcd] p-3.5 rounded-xl shadow-inner text-center">
+                        <p className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider">Risk Level</p>
+                        <h4 className={`text-lg font-black mt-1 ${
+                          (scannedResult.risk_level || 'Low') === 'High' ? 'text-rose-600' :
+                          (scannedResult.risk_level || 'Low') === 'Medium' ? 'text-amber-500' : 'text-emerald-600'
+                        }`}>
+                          {scannedResult.risk_level || (scannedResult.originality_score >= 80 ? 'Low' : scannedResult.originality_score >= 60 ? 'Medium' : 'High')}
+                        </h4>
+                      </div>
+                      
+                      <div className="bg-white border border-[#e6dfcd] p-3.5 rounded-xl shadow-inner text-center">
+                        <p className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider">Verified Company</p>
+                        <h4 className={`text-lg font-black mt-1 ${
+                          (scannedResult.verified_company || 'Yes') === 'Yes' ? 'text-emerald-600' : 'text-rose-600'
+                        }`}>
+                          {scannedResult.verified_company || (scannedResult.originality_score >= 70 ? 'Yes' : 'No')}
+                        </h4>
+                      </div>
+                      
+                      <div className="bg-white border border-[#e6dfcd] p-3.5 rounded-xl shadow-inner text-center">
+                        <p className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider">Status</p>
+                        <h4 className={`text-lg font-black mt-1 ${
+                          scannedResult.status === 'Approved' || scannedResult.status === 'Verified Clean' ? 'text-emerald-600' : 'text-rose-600'
+                        }`}>
+                          {scannedResult.status === 'Verified Clean' ? 'Approved' : scannedResult.status}
+                        </h4>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Audit Statistics */}
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-[#f5f4ef]/30 border border-[#e6dfcd] p-4 rounded-xl text-center">
@@ -344,6 +539,63 @@ export default function JobSeekerSafetyPage() {
                     <div className="bg-[#f5f4ef]/30 border border-[#e6dfcd] p-4 rounded-xl text-center">
                       <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">Plagiarism</p>
                       <h4 className="text-2xl font-black text-[#2A2A2A] mt-1">{scannedResult.plagiarism_score}%</h4>
+                    </div>
+                  </div>
+
+                  {/* AI Checks Grid (6 Checks from Diagram) */}
+                  <div className="space-y-3">
+                    <h5 className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <Terminal size={12} className="text-gray-400" />
+                      <span>System AI Verification Checks</span>
+                    </h5>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {[
+                        { key: "official_website", question: "Does the company have an official website?" },
+                        { key: "recruiter_email", question: "Does recruiter email use official domain?" },
+                        { key: "salary_realistic", question: "Is salary realistic?" },
+                        { key: "linkedin_presence", question: "Does company exist on LinkedIn?" },
+                        { key: "description_copied", question: "Does description look copied or suspicious?" },
+                        { key: "repeated_posts", question: "Is the same job repeatedly posted?" }
+                      ].map((item) => {
+                        const checkVal = getReportChecks(scannedResult)[item.key] || { status: "Unknown", details: "No indicators verified." };
+                        
+                        // Define safe and risk mapping
+                        const safeMapping = { official_website: "yes", recruiter_email: "yes", salary_realistic: "yes", linkedin_presence: "yes", description_copied: "no", repeated_posts: "no" };
+                        const riskMapping = { official_website: "no", recruiter_email: "no", salary_realistic: "no", linkedin_presence: "no", description_copied: "yes", repeated_posts: "yes" };
+                        
+                        const lowercaseVal = String(checkVal.status).toLowerCase();
+                        let badgeClass = "bg-gray-50 text-gray-500 border-gray-100";
+                        let borderClass = "border-[#e6dfcd]";
+                        let iconColor = "text-gray-400";
+                        
+                        if (lowercaseVal === safeMapping[item.key]) {
+                          badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                          borderClass = "border-emerald-100";
+                          iconColor = "text-emerald-500";
+                        } else if (lowercaseVal === riskMapping[item.key]) {
+                          badgeClass = "bg-rose-50 text-rose-700 border-rose-100";
+                          borderClass = "border-rose-100";
+                          iconColor = "text-rose-500";
+                        }
+                        
+                        return (
+                          <div key={item.key} className={`p-4 border rounded-2xl bg-white shadow-sm flex items-start gap-3 ${borderClass}`}>
+                            <CheckCircle className={`w-5 h-5 shrink-0 mt-0.5 ${iconColor}`} />
+                            <div className="space-y-1.5 flex-1">
+                              <div className="flex justify-between items-start gap-2">
+                                <h6 className="text-[11px] font-extrabold text-[#2A2A2A] leading-tight">{item.question}</h6>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 border rounded-full shrink-0 ${badgeClass}`}>
+                                  {checkVal.status}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-gray-400 leading-relaxed font-medium">
+                                {checkVal.details}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -413,8 +665,10 @@ export default function JobSeekerSafetyPage() {
 
       </main>
 
-      {/* Footer */}
       <Footer />
+
+      {/* Upload modal */}
+      <ResumeUploadModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

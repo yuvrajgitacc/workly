@@ -1,12 +1,12 @@
-# Security Policy — Workly
+# Security Policy — Vishleshan
 
-**Workly** is a Multi-Agent Recruitment Intelligence Platform that processes sensitive personal data (resumes, contact details, employment history) and provides fraud detection services. We take security seriously and appreciate responsible disclosure from the community.
+**Vishleshan** is a Multi-Agent Recruitment Intelligence Platform that processes sensitive personal data (resumes, contact details, employment history) and provides fraud detection services. We take security seriously and appreciate responsible disclosure from the community.
 
 ---
 
 ## Supported Versions
 
-The following versions of Workly are actively maintained and receive security updates:
+The following versions of Vishleshan are actively maintained and receive security updates:
 
 | Version | Supported          | Notes                              |
 | ------- | ------------------ | ---------------------------------- |
@@ -43,20 +43,21 @@ The following are **out of scope**:
 
 ## Sensitive Data Handled
 
-Workly processes and stores the following sensitive information. Any vulnerability affecting these assets is considered **high priority**:
+Vishleshan processes and stores the following sensitive information. Any vulnerability affecting these assets is considered **high priority**:
 
 - **PII** — Candidate names, email addresses, phone numbers, LinkedIn/GitHub profiles
 - **Resume Contents** — Employment history, education records, project details
 - **API Keys** — Developer-issued `vish_live_*` and `vish_test_*` keys
 - **JWT Tokens & Seeker Tokens** — Recruiter session JWTs and seeker session tokens (`vish_seeker_token`)
+- **Fraud Analysis Audits** — Detailed scan logs, website validation outcomes, and recruiter email verification metadata stored in the audit trail database
 - **Payment Data** — Razorpay subscription metadata (no raw card data stored)
-- **LLM API Keys** — Gemini API keys stored in the backend `.env` configuration
+- **LLM API Keys & Google OAuth Credentials** — Gemini API keys, Google client ID, and Google client secret stored in the environment configuration
 
 ---
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Workly, **please do not open a public GitHub Issue**. Instead, report it privately using one of the following channels:
+If you discover a security vulnerability in Vishleshan, **please do not open a public GitHub Issue**. Instead, report it privately using one of the following channels:
 
 ### Option 1 — GitHub Private Security Advisory (Preferred)
 Use GitHub's built-in [Private Vulnerability Reporting](https://github.com/DakshBhavsar007/Multi-Agent-Resume-Project/security/advisories/new) to submit a confidential advisory directly to the maintainers.
@@ -65,7 +66,7 @@ Use GitHub's built-in [Private Vulnerability Reporting](https://github.com/Daksh
 Send a detailed report to the project maintainers. Include the following information in your report:
 
 ```
-Subject: [SECURITY] Workly — <brief description>
+Subject: [SECURITY] Vishleshan — <brief description>
 
 - Component affected (e.g., "Resume Upload endpoint", "API Key auth")
 - Steps to reproduce the vulnerability
@@ -104,12 +105,11 @@ We use the following severity levels to prioritise reported issues:
 
 ## Security Best Practices for Self-Hosting
 
-If you are running Workly locally or in your own infrastructure, follow these guidelines:
+If you are running Vishleshan locally or in your own infrastructure, follow these guidelines:
 
-### Environment Variables
-- **Never commit `.env` to version control** — it contains Gemini API keys, DB credentials, and JWT secrets.
-- Use `.env.example` as a template and populate secrets securely.
-- Rotate `GEMINI_API_KEYS` regularly and revoke any compromised keys immediately.
+- **Never commit `.env` or `.env.local` to version control** — they contain Gemini API keys, DB credentials, JWT secrets, and Google Client IDs/Secrets.
+- Use `.env.example` and `.env.local.example` as templates and populate secrets securely.
+- Rotate `GEMINI_API_KEYS` and `GOOGLE_OAUTH_CLIENT_SECRET` regularly and revoke any compromised credentials immediately.
 
 ### API Keys
 - Generate separate `vish_test_*` keys for development — never use production keys in testing.
@@ -133,12 +133,13 @@ If you are running Workly locally or in your own infrastructure, follow these gu
 
 ## Known Security Features
 
-Workly includes the following built-in security controls:
+Vishleshan includes the following built-in security controls:
 
 - **API Key Authentication** — All developer API endpoints require a valid `X-API-Key` header
 - **JWT Auth** — Recruiter sessions use short-lived JWT access tokens with refresh rotation
 - **Redis Rate Limiting** — Per-key monthly quota enforcement prevents abuse
 - **Fraud Detection Agent** — Scans uploaded resumes for AI-generated content, plagiarism, and ATS keyword stuffing
+- **LinkedIn Job Post & Legitimacy Scanner** — Integrates scraping with 6-point AI verification audits (website validation, recruiter email domain checks, salary realism, LinkedIn presence, cloned post templates, and duplicate posting detection) to protect seekers from phishing and recruitment fraud.
 - **LLM Key Rotation** — The `RotateLLMClient` rotates across multiple Gemini API keys to prevent single-key exposure
 - **CORS Configuration** — Restrict allowed origins to your frontend domain in production
 
@@ -146,7 +147,7 @@ Workly includes the following built-in security controls:
 
 ## Acknowledgements
 
-We are grateful to security researchers who help make Workly safer. Responsible disclosures will be credited in release notes (with your permission).
+We are grateful to security researchers who help make Vishleshan safer. Responsible disclosures will be credited in release notes (with your permission).
 
 ---
 

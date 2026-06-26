@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 
-from api.models import JobSeekerAccount, ResumeDraft
+from api.models import JobSeekerAccount, ResumeDraft, ResumeVersion
 from api.views.seeker_auth import require_seeker_jwt
 from models.schemas import success_response, error_response
 from agents.ats_compatibility_agent import AtsCompatibilityAgent
@@ -36,6 +36,48 @@ def extract_text_from_file(file_path):
         logger.error("Failed to extract text from file %s: %s", file_path, e)
         return ""
 
+
+
+def expand_job_description_if_short(jd_text):
+    if not jd_text or not jd_text.strip():
+        return ""
+    stripped = jd_text.strip()
+    if len(stripped) < 120:
+        from agents.llm import RotateLLMClient
+        client = RotateLLMClient()
+        system_prompt = (
+            "You are an ATS Job Description Extender. The user provided a very short target job description, title, or query.\n"
+            "Generate a professional, standard, and complete job description containing standard responsibilities, "
+            "and a list of 15 key technical skills, tools, and methodologies typically required for this role.\n"
+            "Return a JSON object with this format:\n"
+            "{\n"
+            "  \"expanded_job_description\": \"<a professional, standard job description listing key requirements, skills, and responsibilities>\"\n"
+            "}\n"
+            "Return ONLY the valid JSON object. No explanation, no markdown."
+        )
+        try:
+            response = client.chat.completions.create(
+                model="gemini-1.5-flash",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Short target: {stripped}"}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```json"): raw = raw[7:]
+            if raw.startswith("```"): raw = raw[3:]
+            if raw.endswith("```"): raw = raw[:-3]
+            raw = raw.strip()
+            expanded_data = json.loads(raw)
+            if expanded_data.get("expanded_job_description"):
+                expanded_jd = expanded_data["expanded_job_description"]
+                logger.info("Short JD '%s' expanded successfully.", stripped)
+                return expanded_jd
+        except Exception as e:
+            logger.error("Failed to expand short JD: %s", e)
+    return stripped
 
 
 @csrf_exempt
@@ -81,6 +123,7 @@ def ats_check(request):
         uploaded_resume_id = body.get("uploadedResumeId")
         content = body.get("content")
         target_job_desc = body.get("targetJobDescription")
+        target_job_desc = expand_job_description_if_short(target_job_desc)
         
         resume_text = ""
         parsed_data = {}
@@ -393,47 +436,94 @@ def activate_draft(request, draft_id):
             for chunk in file.chunks():
                 f.write(chunk)
                 
-        # Parse the saved PDF using the existing ResumeParsingAgent (exactly as standard resume upload does)
+        # Parse the saved PDF using ResumeParsingAgent as a fallback
         from asgiref.sync import async_to_sync
         from agents.parsing_agent import ResumeParsingAgent
         from agents.normalization_agent import SkillNormalizationAgent
         
-        parser = ResumeParsingAgent()
-        # Feed the generated PDF path to the existing agent
-        parsed_response = async_to_sync(parser.parse)(file_path, "pdf")
-        parsed = parsed_response.get("parsed", {})
+        parsed = {}
+        try:
+            parser = ResumeParsingAgent()
+            parsed_response = async_to_sync(parser.parse)(file_path, "pdf")
+            parsed = parsed_response.get("parsed", {}) or {}
+        except Exception as parse_err:
+            logger.warning("Activation parsing fallback failed: %s", parse_err)
+            
+        # Extract details directly from draft.content first (since it is perfectly structured)
+        content_personal = draft.content.get("personalInfo", {}) or {}
+        experience_data = draft.content.get("experience", []) or []
+        education_data = draft.content.get("education", []) or []
+        projects_data = draft.content.get("projects", []) or []
+        certifications_data = draft.content.get("certifications", []) or []
+        languages_data = draft.content.get("languages", []) or []
+        raw_skills = draft.content.get("skills", []) or []
         
-        # Normalize skills using the existing SkillNormalizationAgent
-        raw_skills = parsed.get("skills", [])
+        # Fallbacks to parsed data if draft content is empty
+        if not experience_data:
+            experience_data = parsed.get("experience", []) or []
+        if not education_data:
+            education_data = parsed.get("education", []) or []
+        if not projects_data:
+            projects_data = parsed.get("projects", []) or []
+        if not raw_skills:
+            raw_skills = parsed.get("skills", []) or []
+
+        # Normalize skills
         try:
             norm_agent = SkillNormalizationAgent()
             normalized_skills = async_to_sync(norm_agent.normalize)(raw_skills)
         except Exception as norm_err:
             logger.warning("Activation skill normalization failed: %s", norm_err)
             normalized_skills = raw_skills
-            
+
+        # Estimate experience years
+        def estimate_experience_years(exp_list):
+            import re
+            from datetime import datetime
+            total_years = 0.0
+            for exp in exp_list:
+                sd = str(exp.get("startDate") or "")
+                ed = str(exp.get("endDate") or "")
+                s_year = None
+                e_year = None
+                
+                s_match = re.search(r'\b(19|20)\d{2}\b', sd)
+                if s_match:
+                    s_year = int(s_match.group(0))
+                    
+                if not ed or ed.lower() in ["present", "current", "now"]:
+                    e_year = datetime.now().year
+                else:
+                    e_match = re.search(r'\b(19|20)\d{2}\b', ed)
+                    if e_match:
+                        e_year = int(e_match.group(0))
+                        
+                if s_year and e_year and e_year >= s_year:
+                    total_years += (e_year - s_year)
+                else:
+                    total_years += 1.0
+            return max(1.0, round(total_years, 1)) if exp_list else 0.0
+
         # Update Seeker Account details
         seeker = request.seeker
         
-        # Prepare resume_data matching the frontend portal schema
         resume_data = {
-            "experience": parsed.get("experience", []),
-            "education": parsed.get("education", []),
-            "total_experience_years": parsed.get("total_experience_years", 0),
-            "open_to": seeker.resume_data.get("open_to", {}) if seeker.resume_data else {},
+            "experience": experience_data,
+            "education": education_data,
+            "total_experience_years": estimate_experience_years(experience_data) if experience_data else 0,
+            "open_to": seeker.resume_data.get("open_to", {}) if (seeker.resume_data and isinstance(seeker.resume_data, dict)) else {},
             "resume_file_name": f"{draft.title}.pdf",
             "resume_updated_at": timezone.now().isoformat() + "Z",
             "resume_size": round(file.size / 1024, 2),
-            "linkedin_url": parsed.get("linkedin_url") or draft.content.get("personalInfo", {}).get("linkedin", ""),
-            "github_url": parsed.get("github_url") or draft.content.get("personalInfo", {}).get("github", ""),
-            "website_url": draft.content.get("personalInfo", {}).get("website", ""),
-            "professional_summary": parsed.get("professional_summary") or draft.content.get("summary", ""),
-            "certifications": draft.content.get("certifications", []),
-            "languages": draft.content.get("languages", []),
-            "projects": draft.content.get("projects", [])
+            "linkedin_url": content_personal.get("linkedin") or parsed.get("linkedin_url") or "",
+            "github_url": content_personal.get("github") or parsed.get("github_url") or "",
+            "website_url": content_personal.get("website") or parsed.get("website_url") or "",
+            "professional_summary": draft.content.get("summary") or parsed.get("professional_summary") or "",
+            "certifications": certifications_data,
+            "languages": languages_data,
+            "projects": projects_data
         }
         
-        # Sync values back to Seeker profile
         seeker.resume_file_path = file_path
         seeker.resume_data = resume_data
         seeker.skills = normalized_skills
@@ -489,7 +579,11 @@ def recommend_templates(request):
     # Calculate years of experience
     exp_years = 0
     if seeker.resume_data:
-        exp_years = seeker.resume_data.get("total_experience_years", 0)
+        exp_years = seeker.resume_data.get("total_experience_years") or 0
+        try:
+            exp_years = int(exp_years)
+        except (TypeError, ValueError):
+            exp_years = 0
         
     # Rule-based suggestions
     if "design" in title or "creative" in title or "ui" in title or "ux" in title:
@@ -582,6 +676,7 @@ def optimize_resume_draft(request):
         body = json.loads(request.body)
         content = body.get("content", {})
         target_job_desc = body.get("targetJobDescription", "")
+        target_job_desc = expand_job_description_if_short(target_job_desc)
         
         # 1. Step 1: Extract keywords & action verbs from job description (or fallback)
         target_keywords = []
@@ -749,6 +844,8 @@ def enhance_resume_draft(request):
         resume_draft_id = body.get("resumeDraftId")
         content = body.get("content")
         target_job_desc = body.get("targetJobDescription", "")
+        target_job_desc = expand_job_description_if_short(target_job_desc)
+        live_ats_score = body.get("liveAtsScore")  # Live score from the frontend ATS sidebar
 
         draft = None
         if resume_draft_id:
@@ -765,12 +862,32 @@ def enhance_resume_draft(request):
         if not resume_data:
             return JsonResponse(error_response("No resume content to enhance"), status=400)
 
+        # 1. Run AtsCompatibilityAgent to extract live missing keywords and actual score
+        from agents.ats_compatibility_agent import AtsCompatibilityAgent
+        ats_agent = AtsCompatibilityAgent()
+        ats_report = ats_agent.analyze(None, resume_data, target_job_desc)
+        ats_missing_keywords = ats_report.get("breakdown", {}).get("keywords", {}).get("missingKeywords", [])
+        
+        # Sync the live ATS score dynamically
+        actual_live_score = ats_report.get("overallScore")
+        if actual_live_score is not None:
+            live_ats_score = actual_live_score
+
+        # 2. Run the full Resume Enhancer Agent
         from agents.resume_enhancer_agent import ResumeEnhancerAgent
         agent = ResumeEnhancerAgent()
-        result = agent.enhance(resume_data, target_job_desc)
+        result = agent.enhance(resume_data, target_job_desc, live_ats_score=live_ats_score)
 
         if not result.get("success"):
             logger.warning("Enhancer returned fallback data: %s", result.get("error"))
+
+        # 3. Merge ATS missing keywords to guarantee the modal and sidebar match exactly
+        if result.get("success") and "data" in result:
+            enhanced_data = result["data"]
+            existing_missing = set(k.lower().strip() for k in enhanced_data.get("missing_keywords", []))
+            for kw in ats_missing_keywords:
+                if kw.lower().strip() not in existing_missing:
+                    enhanced_data.setdefault("missing_keywords", []).append(kw)
 
         # Save to seeker's enhanced_resume field which already exists
         seeker = request.seeker
@@ -821,8 +938,8 @@ def export_draft_pdf(request, draft_id):
             draft.metadata["exported_pdf_path"] = output_path
             draft.save()
 
-        # Build download URL matching Django's media route settings
-        download_url = f"/media/seekers/{request.seeker.id}/exports/{draft.id}_export.pdf"
+        # Build download URL matching Django's uploads route settings
+        download_url = f"/uploads/seekers/{request.seeker.id}/exports/{draft.id}_export.pdf"
         return JsonResponse(success_response({
             "exportedPdfPath": output_path,
             "downloadUrl": download_url
@@ -830,3 +947,149 @@ def export_draft_pdf(request, draft_id):
     except Exception as e:
         logger.error("PDF export failed for draft %s: %s", draft_id, e)
         return JsonResponse(error_response(f"Export failed: {e}"), status=500)
+
+
+@csrf_exempt
+@require_seeker_jwt
+def manage_versions(request, draft_id):
+    """
+    GET /api/v1/seeker/resume/drafts/<draft_id>/versions - List checkpoints
+    POST /api/v1/seeker/resume/drafts/<draft_id>/versions - Create a new Named Version checkpoint
+    """
+    try:
+        draft = ResumeDraft.objects.get(id=draft_id, seeker=request.seeker)
+    except ResumeDraft.DoesNotExist:
+        return JsonResponse(error_response("Resume draft not found"), status=404)
+
+    if request.method == "GET":
+        versions = ResumeVersion.objects.filter(draft=draft).order_by("-created_at")
+        data = []
+        for v in versions:
+            data.append({
+                "id": str(v.id),
+                "title": v.title,
+                "atsScore": v.ats_score,
+                "createdAt": v.created_at.isoformat()
+            })
+        return JsonResponse(success_response(data))
+
+    elif request.method == "POST":
+        try:
+            body = {}
+            if request.body:
+                body = json.loads(request.body)
+            
+            title = body.get("title")
+            if not title:
+                now_str = timezone.now().strftime("%b %d, %Y %H:%M")
+                title = f"Checkpoint - {now_str}"
+
+            version = ResumeVersion.objects.create(
+                draft=draft,
+                title=title,
+                content=draft.content,
+                ats_score=draft.ats_score
+            )
+            return JsonResponse(success_response({
+                "id": str(version.id),
+                "title": version.title,
+                "atsScore": version.ats_score,
+                "createdAt": version.created_at.isoformat()
+            }))
+        except Exception as e:
+            logger.error("Error creating version snapshot: %s", e)
+            return JsonResponse(error_response(f"Failed to create version: {e}"), status=500)
+
+    return JsonResponse(error_response("Method not allowed"), status=405)
+
+
+@csrf_exempt
+@require_seeker_jwt
+def restore_version(request, draft_id, version_id):
+    """
+    POST /api/v1/seeker/resume/drafts/<draft_id>/versions/<version_id>/restore - Restore to checkpoint
+    """
+    if request.method != "POST":
+        return JsonResponse(error_response("Method not allowed"), status=405)
+
+    try:
+        draft = ResumeDraft.objects.get(id=draft_id, seeker=request.seeker)
+        version = ResumeVersion.objects.get(id=version_id, draft=draft)
+        
+        draft.content = version.content
+        draft.ats_score = version.ats_score
+        
+        # Recalculate ATS compatibility report on restore
+        ats_agent = AtsCompatibilityAgent()
+        report = ats_agent.analyze(None, draft.content)
+        draft.ats_report = report
+        
+        draft.save()
+        
+        return JsonResponse(success_response({
+            "id": str(draft.id),
+            "title": draft.title,
+            "templateId": draft.template_id,
+            "content": draft.content,
+            "atsScore": draft.ats_score,
+            "atsReport": draft.ats_report,
+            "updatedAt": draft.updated_at.isoformat()
+        }))
+    except ResumeDraft.DoesNotExist:
+        return JsonResponse(error_response("Resume draft not found"), status=404)
+    except ResumeVersion.DoesNotExist:
+        return JsonResponse(error_response("Version checkpoint not found"), status=404)
+    except Exception as e:
+        logger.error("Error restoring version: %s", e)
+        return JsonResponse(error_response(f"Restore failed: {e}"), status=500)
+
+
+@csrf_exempt
+def debug_project_relevance(request):
+    """
+    POST /api/debug/project-relevance
+    Debug endpoint for inspecting the new project relevance scoring logic.
+    """
+    if request.method != "POST":
+        return JsonResponse(error_response("Method not allowed"), status=405)
+        
+    try:
+        body = json.loads(request.body)
+        resume_input = body.get("resume")
+        jd_text = body.get("job_description", "")
+        
+        parsed_data = {}
+        resume_text = ""
+        
+        if isinstance(resume_input, dict):
+            parsed_data = resume_input
+        elif isinstance(resume_input, list):
+            parsed_data = {"projects": resume_input}
+        elif isinstance(resume_input, str):
+            resume_text = resume_input
+            try:
+                parsed_data = json.loads(resume_input)
+                resume_text = ""
+            except Exception:
+                pass
+                
+        agent = AtsCompatibilityAgent()
+        report = agent.analyze(resume_text, parsed_data, jd_text)
+        
+        pr = report.get("detailed_breakdown", {}).get("project_relevance", {})
+        
+        output = {
+            "projects_found": pr.get("projects_found", []),
+            "keywords_extracted": pr.get("project_keywords", []),
+            "semantic_similarity": pr.get("semantic_similarity", 0.0),
+            "technology_overlap": pr.get("technology_overlap", 0.0),
+            "responsibility_overlap": pr.get("responsibility_overlap", 0.0),
+            "final_project_score": pr.get("score", 0.0),
+            "reasoning": [pr.get("reason", "")]
+        }
+        
+        return JsonResponse(success_response(output))
+    except Exception as e:
+        logger.error("Error in debug project relevance endpoint: %s", e)
+        return JsonResponse(error_response(f"Debug failed: {e}"), status=500)
+

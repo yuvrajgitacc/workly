@@ -57,6 +57,10 @@ export default function SessionWorkspacePage() {
   const [tableSource, setTableSource] = useState("");
   const [tableStatus, setTableStatus] = useState("");
   const [tablePage, setTablePage] = useState(1);
+  const [showCandSuggestions, setShowCandSuggestions] = useState(false);
+  const [showAppSuggestions, setShowAppSuggestions] = useState(false);
+  const CANDIDATE_SUGGESTIONS = ["Shortlisted", "Under Review", "React", "Python", "Javascript"];
+  const APPLICANT_SUGGESTIONS = ["Applied", "Shortlisted", "Rejected", "Hired", "Pending"];
   const [totalPages, setTotalPages] = useState(1);
 
   // Fetch Session Analytics
@@ -732,14 +736,29 @@ export default function SessionWorkspacePage() {
               {/* Filters Bar */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-card border border-border p-3 rounded-2xl shadow-google-1">
                 <div className="relative">
-                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground z-10" />
                   <input 
                     type="text" 
                     placeholder="Search candidate names…" 
                     value={filters.search} 
                     onChange={e=>setFilters({...filters, search: e.target.value})} 
+                    onFocus={() => setShowCandSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowCandSuggestions(false), 200)}
                     className="w-full h-10 pl-9 pr-3 rounded-xl bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground placeholder:text-muted-foreground transition font-medium" 
                   />
+                  {showCandSuggestions && (
+                    <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+                      {CANDIDATE_SUGGESTIONS.map((s, i) => (
+                        <div 
+                          key={i} 
+                          onMouseDown={() => setFilters({...filters, search: s})}
+                          className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left"
+                        >
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="relative">
@@ -975,16 +994,36 @@ export default function SessionWorkspacePage() {
 
                 {/* Table Filters */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 border-b border-border bg-card">
-                  <input 
-                    type="text" 
-                    placeholder="Search applicant names..." 
-                    value={tableSearch}
-                    onChange={(e) => {
-                      setTableSearch(e.target.value);
-                      setTablePage(1);
-                    }}
-                    className="h-9 px-3.5 rounded-xl bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground font-medium"
-                  />
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      placeholder="Search applicant names..." 
+                      value={tableSearch}
+                      onChange={(e) => {
+                        setTableSearch(e.target.value);
+                        setTablePage(1);
+                      }}
+                      onFocus={() => setShowAppSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowAppSuggestions(false), 200)}
+                      className="w-full h-9 px-3.5 rounded-xl bg-muted border border-transparent focus:bg-card focus:border-primary focus:outline-none text-[13px] text-foreground font-medium"
+                    />
+                    {showAppSuggestions && (
+                      <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+                        {APPLICANT_SUGGESTIONS.map((s, i) => (
+                          <div 
+                            key={i} 
+                            onMouseDown={() => {
+                              setTableSearch(s);
+                              setTablePage(1);
+                            }}
+                            className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left"
+                          >
+                            {s}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   
                   <select 
                     value={tableSource}

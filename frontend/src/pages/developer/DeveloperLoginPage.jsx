@@ -66,7 +66,7 @@ export default function DeveloperLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative bg-bg overflow-hidden font-sans" style={{ '--accent': '#2563eb', '--accent-foreground': '#ffffff' }}>
+    <div className="min-h-screen flex items-center justify-center relative bg-bg overflow-hidden font-sans developer-page">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-100 via-bg to-bg opacity-70"></div>
       
       <div className="w-full max-w-md bg-white rounded-3xl p-8 relative z-10 shadow-2xl shadow-gray-200/50 border border-gray-100 m-4">
@@ -153,7 +153,7 @@ export default function DeveloperLoginPage() {
             disabled={loading}
             onClick={() => {
               const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
-              const redirectUri = encodeURIComponent(import.meta.env.VITE_GITHUB_REDIRECT_URI);
+              const redirectUri = encodeURIComponent(window.location.origin + '/auth/github/callback');
               window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=read:user,user:email&state=developer`;
             }}
             className="w-full flex items-center justify-center gap-2.5 bg-white border border-gray-200 text-charcoal py-3.5 rounded-xl font-bold tracking-wide hover:bg-gray-50 transition-all shadow-sm hover:-translate-y-0.5 disabled:opacity-70 disabled:hover:translate-y-0"

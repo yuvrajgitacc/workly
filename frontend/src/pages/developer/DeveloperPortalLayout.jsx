@@ -6,6 +6,7 @@ import { portalAuth } from "../../lib/portalApi";
 import { motion } from "framer-motion";
 import UsageProgress from "../../components/developer/UsageProgress";
 
+
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError(error) { return { hasError: true }; }
@@ -62,7 +63,7 @@ export default function DeveloperPortalLayout() {
   ];
 
   return (
-    <div className="flex h-screen bg-bg overflow-hidden font-sans text-charcoal" style={{ '--accent': '#2563eb', '--accent-foreground': '#ffffff', '--accent-light': '#EFF6FF' }}>
+    <div className="flex h-screen bg-bg overflow-hidden font-sans text-charcoal developer-page">
       
       {/* Mobile Toggle */}
       <div className="md:hidden fixed top-0 w-full bg-white border-b z-50 p-4 flex justify-between items-center text-charcoal shadow-sm">

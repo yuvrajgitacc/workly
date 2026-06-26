@@ -32,14 +32,15 @@ def scan_portfolio(request):
         uploaded_file = request.FILES.get("file")
 
         # Parse request body JSON if it is JSON
-        if request.body:
+        if request.content_type == 'application/json' or 'application/json' in request.headers.get('Content-Type', ''):
             try:
-                data = json.loads(request.body)
-                scan_type = data.get("scan_type", "user")
-                url_val = data.get("url", "").strip()
-                job_title = data.get("job_title", "").strip()
-                job_description = data.get("job_description", "").strip()
-                location_val = data.get("location", "Remote").strip()
+                if request.body:
+                    data = json.loads(request.body)
+                    scan_type = data.get("scan_type", "user")
+                    url_val = data.get("url", "").strip()
+                    job_title = data.get("job_title", "").strip()
+                    job_description = data.get("job_description", "").strip()
+                    location_val = data.get("location", "Remote").strip()
             except Exception:
                 pass
 
@@ -58,11 +59,21 @@ def scan_portfolio(request):
         agent = FraudDetectionAgent()
 
         if scan_type == "job":
+            company_name = "LinkedIn Company"
+            if url_val and "linkedin.com" in url_val.lower():
+                from api.services.linkedin_scraper import fetch_linkedin_job_details
+                details = fetch_linkedin_job_details(url_val)
+                job_title = details.get("job_title")
+                job_description = details.get("job_description")
+                location_val = details.get("location", location_val)
+                company_name = details.get("company_name", "LinkedIn Company")
+            
             if not job_title or not job_description:
                 return JsonResponse(error_response("Job title and description are required for job scanning"), status=400)
             
             analysis = agent.analyze_job(job_title, job_description, {
-                "location": location_val
+                "location": location_val,
+                "company_name": company_name
             })
             
             originality = analysis.get("originality_score", 95)
@@ -73,16 +84,25 @@ def scan_portfolio(request):
             if originality < 70 or plagiarism > 30 or analysis.get("ats_manipulation_detected", False):
                 status_str = "Suspicious Listing"
                 
+            log_title = f"Job: {job_title}"
+            if url_val and "linkedin.com" in url_val.lower():
+                log_title = f"LinkedIn Job: {job_title}"
+
+            flags = analysis.get("manipulation_flags", []) or ["Safety Audit Checked"]
+            if url_val and "linkedin.com" in url_val.lower():
+                flags = [f"Source: LinkedIn", f"Employer: {company_name}"] + [f for f in flags if f != "Safety Audit Checked"]
+                
             log = FraudScanLog.objects.create(
                 company=request.company,
-                candidate_name=f"Job: {job_title}",
+                candidate_name=log_title,
                 role="Job Posting",
                 location=location_val,
                 originality_score=originality,
                 ai_probability=ai_prob,
                 plagiarism_score=plagiarism,
                 status=status_str,
-                portfolios=analysis.get("manipulation_flags", []) or ["Safety Audit Checked"]
+                portfolios=flags,
+                detailed_checks=analysis.get("detailed_checks", {})
             )
             
         else:
@@ -171,6 +191,20 @@ def scan_portfolio(request):
                 portfolios=portfolios
             )
 
+        detailed_checks = log.detailed_checks or {}
+        risk_level = detailed_checks.get("risk_level")
+        if not risk_level:
+            if log.originality_score < 60:
+                risk_level = "High"
+            elif log.originality_score < 80:
+                risk_level = "Medium"
+            else:
+                risk_level = "Low"
+
+        verified_company = detailed_checks.get("verified_company")
+        if not verified_company:
+            verified_company = "Yes" if log.originality_score >= 70 else "No"
+
         return JsonResponse(success_response({
             "id": str(log.id),
             "candidate_name": log.candidate_name,
@@ -180,7 +214,10 @@ def scan_portfolio(request):
             "ai_probability": log.ai_probability,
             "plagiarism_score": log.plagiarism_score,
             "status": log.status,
+            "risk_level": risk_level,
+            "verified_company": verified_company,
             "portfolios": log.portfolios,
+            "detailed_checks": detailed_checks,
             "created_at": log.created_at.isoformat()
         }))
 
@@ -212,7 +249,10 @@ def get_scan_history(request):
                 "ai_probability": l.ai_probability,
                 "plagiarism_score": l.plagiarism_score,
                 "status": l.status,
+                "risk_level": (l.detailed_checks or {}).get("risk_level") or ("High" if l.originality_score < 60 else "Medium" if l.originality_score < 80 else "Low"),
+                "verified_company": (l.detailed_checks or {}).get("verified_company") or ("Yes" if l.originality_score >= 70 else "No"),
                 "portfolios": l.portfolios or [],
+                "detailed_checks": l.detailed_checks or {},
                 "created_at": l.created_at.isoformat()
             }
             for l in logs

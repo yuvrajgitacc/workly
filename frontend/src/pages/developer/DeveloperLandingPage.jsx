@@ -7,6 +7,8 @@ import { vs2015 } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { portalBilling, portalAuth } from "../../lib/portalApi";
 import { usePortalAuthStore } from "../../stores/portalAuthStore";
 
+
+
 export default function DeveloperLandingPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -63,7 +65,7 @@ const response = await fetch(
   {
     method: 'POST',
     headers: {
-      'X-API-Key': 'vish_live_abc123...'
+      'X-API-Key': 'vishleshan_live_abc123...'
     },
     body: formData  // attach resume PDF
   }
@@ -84,7 +86,7 @@ const { data } = await response.json();
     Python: `import requests
 response = requests.post(
     "https://api.vishleshan.ai/api/v1/ingest/upload",
-    headers={"X-API-Key": "vish_live_your_key"},
+    headers={"X-API-Key": "vishleshan_live_your_key"},
     files={"files": open("resume.pdf", "rb")},
     data={"session_id": "your_session_id"}
 )
@@ -97,21 +99,21 @@ const response = await fetch(
   'https://api.vishleshan.ai/api/v1/ingest/upload',
   {
     method: 'POST',
-    headers: { 'X-API-Key': 'vish_live_your_key' },
+    headers: { 'X-API-Key': 'vishleshan_live_your_key' },
     body: formData
   }
 );`,
     cURL: `curl -X POST \
   https://api.vishleshan.ai/api/v1/ingest/upload \
-  -H "X-API-Key: vish_live_your_key" \\
+  -H "X-API-Key: vishleshan_live_your_key" \\
   -F "session_id=your_session_id" \
   -F "files=@resume.pdf"`
   };
 
   return (
-    <div className="min-h-screen font-sans text-charcoal bg-bg" style={{ '--accent': '#2563eb', '--accent-foreground': '#ffffff', '--accent-light': '#EFF6FF' }}>
+    <div className="min-h-screen font-sans text-charcoal bg-bg developer-page">
       {/* NAVBAR */}
-      <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? "bg-white shadow-md py-3" : "bg-white/90 backdrop-blur-md py-4"}`}>
+      <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? "bg-white shadow-md py-1" : "bg-white/90 backdrop-blur-md py-2"}`}>
         <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <span className="text-xl font-bold text-accent cursor-pointer" onClick={() => window.scrollTo(0, 0)}>Vishleshan</span>
@@ -382,10 +384,13 @@ const response = await fetch(
       {/* FOOTER */}
       <footer className="bg-charcoal text-white/70 py-16">
          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex flex-col items-center md:items-start gap-2">
-               <span className="text-2xl font-bold text-white">Vishleshan <span className="text-accent">Portal</span></span>
-               <p className="text-sm">Built for smarter hiring.</p>
-            </div>
+             <div className="flex flex-col items-center md:items-start gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold text-accent">Vishleshan</span>
+                  <span className="text-[13px] text-gray-400 font-medium">for Developers</span>
+                </div>
+                <p className="text-sm mt-1">Built for smarter hiring.</p>
+             </div>
             
             <div className="flex flex-wrap justify-center gap-8 text-sm font-medium">
                <a href="#" className="hover:text-accent transition-colors">Privacy Policy</a>

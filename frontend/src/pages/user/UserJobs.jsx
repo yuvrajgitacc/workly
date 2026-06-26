@@ -69,6 +69,12 @@ export default function UserJobs() {
   const [search, setSearch] = useState(searchParams.get("q") || "");
   const [location, setLocation] = useState(searchParams.get("location") || "");
   
+  const [showJobSuggestions, setShowJobSuggestions] = useState(false);
+  const [showLocSuggestions, setShowLocSuggestions] = useState(false);
+
+  const POPULAR_JOBS = ["React Developer", "Software Engineer", "Full Stack Developer", "Data Scientist", "Product Manager", "DevOps Engineer", "UI/UX Designer"];
+  const POPULAR_LOCATIONS = ["Remote", "Ahmedabad", "New York", "San Francisco", "London", "Bengaluru", "Mumbai"];
+  
   const [activeTypes, setActiveTypes] = useState([]);
   const [activeWorkplaces, setActiveWorkplaces] = useState([]);
   const [activeExp, setActiveExp] = useState("");
@@ -146,23 +152,57 @@ export default function UserJobs() {
             <p className="mt-1 text-xs text-muted-foreground">Showing {filtered.length} of {jobs.length} roles</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
-            <div className="google-shadow flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 flex-1 sm:w-[240px]">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input 
-                placeholder="Search job title..." 
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
-              />
+            <div className="relative flex-1 sm:w-[240px]">
+              <div className="google-shadow flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 w-full">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <input 
+                  placeholder="Search job title..." 
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onFocus={() => setShowJobSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowJobSuggestions(false), 200)}
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
+                />
+              </div>
+              {showJobSuggestions && (
+                <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+                  {POPULAR_JOBS.map((s, i) => (
+                    <div 
+                      key={i} 
+                      onMouseDown={() => setSearch(s)}
+                      className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left"
+                    >
+                      {s}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="google-shadow flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 flex-1 sm:w-[240px]">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <input 
-                placeholder="Location..." 
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
-              />
+            <div className="relative flex-1 sm:w-[240px]">
+              <div className="google-shadow flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 w-full">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                <input 
+                  placeholder="Location..." 
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onFocus={() => setShowLocSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowLocSuggestions(false), 200)}
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
+                />
+              </div>
+              {showLocSuggestions && (
+                <div className="absolute top-[105%] left-0 right-0 bg-white border border-border rounded-2xl shadow-lg z-50 py-1.5 max-h-48 overflow-y-auto">
+                  {POPULAR_LOCATIONS.map((s, i) => (
+                    <div 
+                      key={i} 
+                      onMouseDown={() => setLocation(s)}
+                      className="px-4 py-2 hover:bg-gray-50 text-xs text-foreground cursor-pointer font-medium text-left"
+                    >
+                      {s}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

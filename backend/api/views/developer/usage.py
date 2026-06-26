@@ -1,8 +1,9 @@
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from django.http import JsonResponse
 from django.db.models import Avg, Count
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 
 from api.models import DeveloperAccount, DeveloperAPIKey, APIUsageLog, MonthlyUsageSummary
 from api.decorators import require_developer_jwt

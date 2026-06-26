@@ -4,23 +4,246 @@ import re
 from datetime import datetime, timezone
 from collections import Counter
 from agents.llm import RotateLLMClient
+import numpy as np
+from agents.embeddings import get_embedding_model
+
+def compute_semantic_similarity(queries, candidates):
+    model = get_embedding_model()
+    if not model or not queries or not candidates:
+        return 0.0, []
+        
+    try:
+        # Encode lists of sentences
+        query_embs = model.encode(queries, convert_to_numpy=True)
+        cand_embs = model.encode(candidates, convert_to_numpy=True)
+        
+        # Normalize embeddings
+        query_embs = query_embs / (np.linalg.norm(query_embs, axis=1, keepdims=True) + 1e-8)
+        cand_embs = cand_embs / (np.linalg.norm(cand_embs, axis=1, keepdims=True) + 1e-8)
+        
+        # Compute cosine similarities matrix (shape: num_queries, num_candidates)
+        sim_matrix = np.dot(query_embs, cand_embs.T)
+        
+        # For each query, find the best matching candidate sentence
+        max_sims = np.max(sim_matrix, axis=1)
+        mean_similarity = float(np.mean(max_sims))
+        
+        # Also return detail mapping
+        details = []
+        for i, q in enumerate(queries):
+            best_idx = int(np.argmax(sim_matrix[i]))
+            best_sim = float(max_sims[i])
+            details.append({
+                "query": q,
+                "best_match": candidates[best_idx],
+                "similarity": best_sim
+            })
+            
+        return mean_similarity, details
+    except Exception as e:
+        logger.error("Error in compute_semantic_similarity: %s", e)
+        return 0.0, []
 
 logger = logging.getLogger(__name__)
 
+TECH_DICT = {
+    # Languages
+    "python", "javascript", "java", "typescript", "golang", "rust", "ruby", "php", "sql", "nosql", "cplusplus", "cpp", "csharp", "bash", "scala", "kotlin", "swift", "dart",
+    # Frontend
+    "react", "angular", "vue", "svelte", "nextjs", "nuxt", "gatsby", "html", "css", "tailwind", "tailwindcss", "bootstrap", "sass", "less", "webpack", "vite", "redux", "graphql", "apollo",
+    # Backend & Frameworks
+    "node", "express", "django", "flask", "fastapi", "spring", "laravel", "rails", "nest", "nestjs", "asp", "dotnet",
+    # Databases
+    "mongodb", "postgresql", "mysql", "redis", "elasticsearch", "sqlite", "mariadb", "oracle", "dynamodb", "cassandra", "firebase", "supabase",
+    # DevOps & Cloud
+    "docker", "kubernetes", "aws", "gcp", "azure", "ci", "cd", "cicd", "jenkins", "gitlab", "github", "bitbucket", "ansible", "terraform", "prometheus", "grafana", "opentelemetry", "elk", "nginx", "apache",
+    # Testing & Tools
+    "jest", "cypress", "playwright", "selenium", "pytest", "junit", "mocha", "chai",
+    # Concepts
+    "microservices", "agile", "scrum", "rest", "grpc", "soap", "mvc", "tdd", "bdd", "ci/cd"
+}
+
 class AtsCompatibilityAgent:
     """
-    Independent agent that performs ATS compatibility checks.
-    Uses a hybrid approach: deterministic rules (pyspellchecker, keyword overlap, layout/dates)
-    blended with lightweight, structured LLM-assisted semantic checks.
+    Independent agent that performs production-grade ATS compatibility checks.
+    Scores are strictly calculated using 6 weighted components:
+      - Keyword Match (35%)
+      - Skills Match (25%)
+      - Experience Relevance (15%)
+      - Project Relevance (10%)
+      - Education Match (5%)
+      - ATS Formatting (10%)
     """
     def __init__(self):
         self.client = RotateLLMClient()
+
+    def _extract_techs_from_text(self, text: str) -> set:
+        if not text:
+            return set()
+        # Clean text preserving some special chars like +, #, .
+        cleaned = re.sub(r'[^a-zA-Z0-9+#.\s-]', ' ', text.lower())
+        # Replace common occurrences of node.js, react.js etc.
+        cleaned = cleaned.replace("react.js", "react").replace("reactjs", "react")
+        cleaned = cleaned.replace("node.js", "node").replace("nodejs", "node")
+        cleaned = cleaned.replace("next.js", "nextjs").replace("nextjs", "nextjs")
+        cleaned = cleaned.replace("vue.js", "vue").replace("vuejs", "vue")
+        # Tokenize and look up in TECH_DICT
+        words = cleaned.split()
+        found = set()
+        for w in words:
+            if w in TECH_DICT:
+                found.add(w)
+            elif w in ["c++", "cpp", "cplusplus"]:
+                found.add("cpp")
+            elif w in ["c#", "csharp"]:
+                found.add("csharp")
+            elif w in ["ci/cd", "cicd"]:
+                found.add("ci/cd")
+            elif w in ["dotnet", ".net"]:
+                found.add("dotnet")
+        return found
+
+    def _is_partial_match(self, jd_item: str, proj_item: str) -> bool:
+        """Determines if a JD technology/keyword partially matches a project technology/keyword."""
+        j = jd_item.lower().strip()
+        p = proj_item.lower().strip()
+        if j == p:
+            return True
+            
+        j_clean = re.sub(r'[^a-z0-9]', '', j)
+        p_clean = re.sub(r'[^a-z0-9]', '', p)
+        if j_clean == p_clean:
+            return True
+            
+        if len(j_clean) > 2 and len(p_clean) > 2:
+            if j_clean in p_clean or p_clean in j_clean:
+                return True
+                
+        aliases = {
+            "ci/cd": ["cicd", "continuous integration", "continuous deployment", "github actions", "gitlab ci", "jenkins"],
+            "rest api": ["restful api", "rest apis", "restful apis", "restful", "apis"],
+            "cloud": ["aws", "gcp", "azure", "cloud native", "cloud infrastructure"],
+            "react": ["reactjs", "react.js"],
+            "node": ["nodejs", "node.js"],
+            "next": ["nextjs", "next.js"],
+            "vue": ["vuejs", "vue.js"],
+            "c++": ["cpp", "cplusplus"],
+            "c#": ["csharp"]
+        }
+        for main_name, list_aliases in aliases.items():
+            if (j == main_name or j in list_aliases) and (p == main_name or p in list_aliases):
+                return True
+        return False
+
+    def _extract_jd_requirements(self, jd_text: str) -> dict:
+        """Extract key components from target job description using LLM."""
+        if not jd_text or not jd_text.strip():
+            return {
+                "required_skills": [],
+                "preferred_skills": [],
+                "technologies": [],
+                "frameworks": [],
+                "responsibilities": [],
+                "min_experience_years": 0,
+                "preferred_degree": ""
+            }
+
+        system_prompt = (
+            "You are an ATS Job Description Parser. Analyze the job description and extract details into a JSON object.\n"
+            "Include:\n"
+            "1. 'required_skills': List of required hard and soft skills (limit 15).\n"
+            "2. 'preferred_skills': List of preferred or nice-to-have skills (limit 10).\n"
+            "3. 'technologies': Programming languages, tools, cloud services, and software systems mentioned.\n"
+            "4. 'frameworks': Software frameworks and libraries.\n"
+            "5. 'responsibilities': Primary responsibilities (short bullet strings).\n"
+            "6. 'min_experience_years': Minimum years of experience required (extract integer, default to 0).\n"
+            "7. 'preferred_degree': Preferred education (e.g. 'Bachelor', 'Master', 'PhD', or empty string).\n\n"
+            "Return ONLY a valid JSON object matching this schema. No markdown prose or explanation."
+        )
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gemini-1.5-flash",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Job Description:\n{jd_text[:4000]}"}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```json"): raw = raw[7:]
+            if raw.startswith("```"): raw = raw[3:]
+            if raw.endswith("```"): raw = raw[:-3]
+            raw = raw.strip()
+            parsed = json.loads(raw)
+            # Safe parsing ensure fields are present
+            parsed.setdefault("required_skills", [])
+            parsed.setdefault("preferred_skills", [])
+            parsed.setdefault("technologies", [])
+            parsed.setdefault("frameworks", [])
+            parsed.setdefault("responsibilities", [])
+            parsed.setdefault("min_experience_years", 0)
+            parsed.setdefault("preferred_degree", "")
+            return parsed
+        except Exception as e:
+            logger.error("JD Parsing agent failed: %s", e)
+            return {
+                "required_skills": [],
+                "preferred_skills": [],
+                "technologies": [],
+                "frameworks": [],
+                "responsibilities": [],
+                "min_experience_years": 0,
+                "preferred_degree": ""
+            }
+
+    def _calculate_experience_years(self, parsed_data: dict) -> float:
+        """Parse work experience dates and calculate total experience years."""
+        total_years = 0.0
+        experiences = parsed_data.get("experience", []) or []
+        for exp in experiences:
+            sd = str(exp.get("startDate") or "")
+            ed = str(exp.get("endDate") or "")
+            s_year = None
+            e_year = None
+            
+            s_match = re.search(r'\b(19|20)\d{2}\b', sd)
+            if s_match:
+                s_year = int(s_match.group(0))
+                
+            if not ed or ed.lower() in ["present", "current", "now", "ongoing"]:
+                e_year = datetime.now().year
+            else:
+                e_match = re.search(r'\b(19|20)\d{2}\b', ed)
+                if e_match:
+                    e_year = int(e_match.group(0))
+                    
+            if s_year and e_year and e_year >= s_year:
+                diff = e_year - s_year
+                total_years += max(1.0, float(diff))
+            else:
+                total_years += 1.0
+        return round(total_years, 1)
+
+    def _get_degree_level(self, degree_str: str) -> int:
+        """Helper to get a numeric level representing a degree for comparison."""
+        deg = str(degree_str).lower()
+        if any(x in deg for x in ["phd", "doctorate", "ph.d"]):
+            return 4
+        if any(x in deg for x in ["master", "ms", "mtech", "m.tech", "mba", "m.s."]):
+            return 3
+        if any(x in deg for x in ["bachelor", "bs", "btech", "b.tech", "ba", "b.s.", "b.a."]):
+            return 2
+        if any(x in deg for x in ["associate", "diploma"]):
+            return 1
+        return 0
 
     def _check_formatting(self, resume_text: str) -> tuple:
         score = 100
         issues = []
         
-        # 1. Multi-column check (case-insensitive)
+        # 1. Multi-column check
         if "[left column]" in resume_text.lower() or "[right column]" in resume_text.lower():
             score -= 20
             issues.append("Multi-column layout detected. Legacy ATS scanners may parse columns out of order.")
@@ -36,7 +259,7 @@ class AtsCompatibilityAgent:
         found_icons = [icon for icon in icons if icon in resume_text]
         if found_icons:
             score -= 10
-            issues.append(f"Creative icons ({', '.join(found_icons)}) found in contact info. Use clean text labels.")
+            issues.append(f"Creative icons ({', '.join(found_icons)}) found. Use clean text labels.")
             
         # 4. Excessive bullet length check
         long_bullets = 0
@@ -103,51 +326,14 @@ class AtsCompatibilityAgent:
             score -= 15
             issues.append("Inconsistent date formats found. Standardize on 'Month YYYY' (e.g. 'Jul 2024') or 'MM/YYYY'.")
             
-        # 3. Creative Header Naming
-        creative_headers = ["my journey", "my story", "where i've been", "things i do", "about me", "know me"]
-        found_creative = [h for h in creative_headers if h in text_lower]
-        if found_creative:
-            score -= 15
-            issues.append(f"Creative section header '{found_creative[0]}' found. Use standard titles (e.g., 'Work Experience').")
-            
         return max(0, score), issues
-
-    def _run_llm_grammar_check(self, resume_text: str) -> list:
-        system_prompt = (
-            "You are an expert Grammar and Proofreading Agent. Analyze the provided resume text "
-            "and list only critical grammar, syntax, capitalization, or punctuation issues.\n"
-            "Ignore spelling errors of technical names, libraries, frameworks, or people names.\n"
-            "Return your analysis as a single JSON list of strings (grammar issue descriptions).\n"
-            "Example:\n"
-            "[\"Missing period at the end of the summary\", \"Subject-verb agreement error in experience bullet 2\"]\n"
-            "Return ONLY the valid JSON list. No explanation, no markdown."
-        )
-        try:
-            response = self.client.chat.completions.create(
-                model="gemini-1.5-flash",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Resume Text:\n{resume_text[:4000]}"}
-                ],
-                temperature=0.1,
-                max_tokens=400
-            )
-            raw = response.choices[0].message.content.strip()
-            if raw.startswith("```json"): raw = raw[7:]
-            if raw.startswith("```"): raw = raw[3:]
-            if raw.endswith("```"): raw = raw[:-3]
-            raw = raw.strip()
-            return json.loads(raw)
-        except Exception as e:
-            logger.error("LLM fallback grammar check failed: %s", e)
-            return []
 
     def _check_spelling_and_grammar(self, resume_text: str, parsed_data: dict) -> tuple:
         score = 100
         spelling_issues = []
         grammar_issues = []
         
-        # 1. Spelling Check using pyspellchecker with high-fidelity developer whitelist
+        # Local SpellChecker
         try:
             from spellchecker import SpellChecker
             spell = SpellChecker()
@@ -157,7 +343,6 @@ class AtsCompatibilityAgent:
             name = personal.get("fullName", "") or parsed_data.get("fullName", "")
             title = personal.get("title", "") or parsed_data.get("title", "")
             
-            # Seed standard whitelist + common abbreviations to avoid false flags
             whitelist = {
                 "fastapi", "react", "threejs", "cloudinary", "render", "gunicorn", "eventlet",
                 "playwright", "skillverse", "studyverse", "testverse", "github", "linkedin",
@@ -170,10 +355,13 @@ class AtsCompatibilityAgent:
                 "tech", "gmail", "app", "admin", "https", "multi", "http", "www", "com", "net", 
                 "org", "edu", "slug", "freelance", "deployed", "implemented", "managed", 
                 "created", "designed", "assisted", "improved", "integrated", "optimized", "led",
-                "gamification"
+                "gamification", "opentelemetry", "jenkins", "tailwind", "tailwindcss", "gitlab", 
+                "ci", "cd", "cicd", "promql", "jaeger", "dockerfile", "microservices", "microservice",
+                "bitbucket", "terraform", "k8s", "helm", "orchestrated", "streamlined", "configured", 
+                "refactored", "containerized", "monitored", "automated", "provisioned", "redhat",
+                "centos", "debian", "ubuntu", "linux", "graphql", "restful", "apis", "sdk", "sdks"
             }
             
-            # Dynamically add all words from the parsed resume details to avoid false positives
             for s in skills:
                 for word in re.findall(r'\b[a-zA-Z]+\b', str(s)):
                     whitelist.add(word.lower())
@@ -182,9 +370,7 @@ class AtsCompatibilityAgent:
             for word in re.findall(r'\b[a-zA-Z]+\b', title):
                 whitelist.add(word.lower())
                 
-            # Tokenize words of interest (length 3 to 22, alphabetical)
             words = re.findall(r'\b[a-zA-Z]{3,22}\b', resume_text)
-            
             candidates = set()
             for w in words:
                 if any(c.isupper() for c in w[1:]):
@@ -202,12 +388,9 @@ class AtsCompatibilityAgent:
         except Exception as e:
             logger.error("Spellchecker execution failed: %s", e)
             
-        # 2. Deterministic Grammar & Cleanliness Rules (fast, local, no JVM downloads)
-        bullets_ends_period = 0
-        bullets_no_period = 0
+        # Capitalization and trailing punctuation
         lowercase_starts = 0
         double_spaces = 0
-        
         for line in resume_text.split("\n"):
             line = line.strip()
             if not line:
@@ -216,29 +399,14 @@ class AtsCompatibilityAgent:
                 double_spaces += 1
             if line.startswith("-") or line.startswith("▸") or line.startswith("•"):
                 content = re.sub(r'^[-▸•]\s*', '', line).strip()
-                if not content:
-                    continue
-                if content[0].islower():
+                if content and content[0].islower():
                     lowercase_starts += 1
-                if content.endswith("."):
-                    bullets_ends_period += 1
-                else:
-                    bullets_no_period += 1
                     
         if double_spaces > 0:
             grammar_issues.append("Double spaces detected. Ensure clean, single spacing throughout.")
         if lowercase_starts > 0:
-            grammar_issues.append("Capitalization: Bullet points should always start with a capital letter.")
-        if bullets_ends_period > 0 and bullets_no_period > 0:
-            grammar_issues.append("Inconsistent punctuation: Some bullet points end with a period while others do not. Standardize ending punctuation.")
+            grammar_issues.append("Capitalization: Bullet points should start with a capital letter.")
             
-        # 3. LLM Grammar Check Fallback
-        llm_grammar = self._run_llm_grammar_check(resume_text)
-        if llm_grammar:
-            grammar_issues.extend(llm_grammar)
-            
-        # 4. Score Deduction
-        # Penalty: 4 points per spelling error, 5 points per grammar issue
         total_penalties = len(spelling_issues) * 4 + len(grammar_issues) * 5
         score -= total_penalties
         
@@ -250,266 +418,8 @@ class AtsCompatibilityAgent:
             
         return max(0, score), issues
 
-    def _check_repetition(self, resume_text: str) -> tuple:
-        score = 100
-        issues = []
-        
-        words = re.findall(r'\b[a-zA-Z]{3,20}\b', resume_text.lower())
-        stop_words = {
-            "and", "the", "for", "with", "this", "that", "from", "their", "them", "they",
-            "our", "you", "your", "has", "had", "have", "was", "were", "are", "been", "work",
-            "project", "system", "using", "used", "role", "team", "application", "platform", "based",
-            "built", "like", "design", "development", "developer", "engineering", "user", "users"
-        }
-        
-        synonyms = {
-            "implemented": ["executed", "applied", "enforced", "deployed", "integrated"],
-            "managed": ["directed", "led", "supervised", "orchestrated", "steered"],
-            "created": ["developed", "built", "engineered", "authored", "crafted"],
-            "designed": ["modeled", "structured", "crafted", "devised", "formulated"],
-            "assisted": ["supported", "aided", "collaborated", "facilitated"],
-            "improved": ["enhanced", "optimized", "boosted", "upgraded", "refined"],
-            "developed": ["built", "engineered", "created", "produced", "formulated"],
-            "integrated": ["incorporated", "linked", "merged", "unified", "consolidated"],
-            "optimized": ["streamlined", "refined", "maximized", "enhanced"],
-            "led": ["guided", "directed", "steered", "supervised", "captained"]
-        }
-        
-        word_counts = Counter(w for w in words if w not in stop_words)
-        
-        repeated_verbs = []
-        for word, count in word_counts.items():
-            if count >= 3 and word in synonyms:
-                repeated_verbs.append((word, count))
-                
-        if repeated_verbs:
-            repeated_verbs.sort(key=lambda x: x[1], reverse=True)
-            penalty = min(len(repeated_verbs) * 8, 40)
-            score -= penalty
-            
-            for w, c in repeated_verbs[:3]:
-                options = ", ".join(synonyms[w][:3])
-                issues.append(f"Action verb '{w}' repeated {c} times. Synonym suggestions: {options}")
-                
-        return max(0, score), issues
-
-    def _check_keywords(self, resume_text: str, parsed_data: dict, target_jd: str = None) -> tuple:
-        det_score = 100
-        missing = []
-        matched = []
-        
-        resume_skills = set(s.lower() for s in parsed_data.get("skills", []) if s)
-        resume_text_lower = resume_text.lower()
-        
-        if target_jd:
-            jd_words = re.findall(r'\b[a-zA-Z]{3,15}\b', target_jd.lower())
-            tech_dict = {
-                "python", "javascript", "java", "typescript", "golang", "rust", "ruby", "php", "sql", "nosql",
-                "react", "angular", "vue", "svelte", "nextjs", "node", "express", "django", "flask", "fastapi",
-                "spring", "laravel", "rails", "docker", "kubernetes", "aws", "gcp", "azure", "ci/cd", "git",
-                "mongodb", "postgresql", "mysql", "redis", "elasticsearch", "graphql", "rest", "grpc", "html", "css",
-                "tailwind", "bootstrap", "microservices", "agile", "scrum", "testing", "jest", "cypress", "playwright"
-            }
-            
-            jd_tech = set(w for w in jd_words if w in tech_dict)
-            
-            matched_tech = jd_tech.intersection(resume_skills)
-            missing_tech = jd_tech.difference(resume_skills)
-            
-            still_missing = []
-            for m in missing_tech:
-                if f" {m} " in f" {resume_text_lower} " or f" {m}," in f" {resume_text_lower} " or f" {m}." in f" {resume_text_lower} ":
-                    matched_tech.add(m)
-                else:
-                    still_missing.append(m)
-                    
-            matched = list(matched_tech)
-            missing = still_missing
-            
-            if jd_tech:
-                det_score = int((len(matched_tech) / len(jd_tech)) * 100)
-                
-            llm_score = det_score
-            try:
-                system_prompt = (
-                    "You are a semantic keyword ATS matching agent. Compare the resume text with the job description.\n"
-                    "Identify critical technical/soft skills missing in the resume that are strongly requested in the JD.\n"
-                    "Return a JSON object with this format:\n"
-                    "{\n"
-                    "  \"score\": <number 0-100 representing semantic relevance match>,\n"
-                    "  \"missingKeywords\": [<string>],\n"
-                    "  \"matchedKeywords\": [<string>]\n"
-                    "}\n"
-                    "Return ONLY the valid JSON object. No markdown."
-                )
-                response = self.client.chat.completions.create(
-                    model="gemini-1.5-flash",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Resume Text:\n{resume_text[:4000]}\n\nJob Description:\n{target_jd[:4000]}"}
-                    ],
-                    temperature=0.1,
-                    max_tokens=400
-                )
-                raw = response.choices[0].message.content.strip()
-                if raw.startswith("```json"): raw = raw[7:]
-                if raw.startswith("```"): raw = raw[3:]
-                if raw.endswith("```"): raw = raw[:-3]
-                raw = raw.strip()
-                llm_data = json.loads(raw)
-                
-                llm_score = llm_data.get("score", det_score)
-                missing = list(set(missing + llm_data.get("missingKeywords", [])))
-                matched = list(set(matched + llm_data.get("matchedKeywords", [])))
-            except Exception as e:
-                logger.error("LLM JD matching check failed: %s", e)
-                
-            score = int(det_score * 0.6 + llm_score * 0.4)
-        else:
-            personal = parsed_data.get("personalInfo", {}) or {}
-            title = personal.get("title", "") or parsed_data.get("title", "") or ""
-            
-            if len(resume_skills) < 5:
-                det_score -= 30
-            elif len(resume_skills) < 10:
-                det_score -= 15
-                
-            llm_score = det_score
-            try:
-                system_prompt = (
-                    "You are an ATS skills completeness analyzer. Evaluate the resume's skills list and title.\n"
-                    "Determine if they have a healthy density and keyword breadth for their target industry.\n"
-                    "Identify key industry terms that are missing.\n"
-                    "Return a JSON object with this format:\n"
-                    "{\n"
-                    "  \"score\": <number 0-100 general completeness score>,\n"
-                    "  \"missingKeywords\": [<string>],\n"
-                    "  \"matchedKeywords\": [<string>]\n"
-                    "}\n"
-                    "Return ONLY the valid JSON object. No markdown."
-                )
-                response = self.client.chat.completions.create(
-                    model="gemini-1.5-flash",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Title: {title}\nSkills: {', '.join(resume_skills)}"}
-                    ],
-                    temperature=0.1,
-                    max_tokens=400
-                )
-                raw = response.choices[0].message.content.strip()
-                if raw.startswith("```json"): raw = raw[7:]
-                if raw.startswith("```"): raw = raw[3:]
-                if raw.endswith("```"): raw = raw[:-3]
-                raw = raw.strip()
-                llm_data = json.loads(raw)
-                
-                llm_score = llm_data.get("score", det_score)
-                missing = llm_data.get("missingKeywords", [])
-                matched = llm_data.get("matchedKeywords", []) or list(resume_skills)
-            except Exception as e:
-                logger.error("LLM general keywords check failed: %s", e)
-                
-            score = int(det_score * 0.6 + llm_score * 0.4)
-            
-        return max(0, min(score, 100)), missing[:8], matched[:15]
-
-    def _check_content_quality(self, parsed_data: dict) -> tuple:
-        score = 100
-        weak_bullets = []
-        
-        bullets = []
-        experiences = parsed_data.get("experience", []) or []
-        for exp in experiences:
-            for b in exp.get("bullets", []) or []:
-                if b.strip():
-                    bullets.append(b.strip())
-                    
-        projects = parsed_data.get("projects", []) or []
-        for proj in projects:
-            desc = proj.get("description", "")
-            if desc.strip():
-                for b in desc.splitlines():
-                    if b.strip():
-                        bullets.append(b.strip())
-                        
-        if not bullets:
-            return 40, ["No work experience or project bullets found. Please add achievements."]
-            
-        # Programmatic check for metrics/quantification
-        quantified_count = 0
-        metric_pattern = re.compile(r'\b(\d+|first|second|third|percent|%|\$)\b', re.IGNORECASE)
-        for b in bullets:
-            if metric_pattern.search(b):
-                quantified_count += 1
-                
-        quant_ratio = quantified_count / len(bullets) if bullets else 0
-        det_score = 100
-        if quant_ratio < 0.20:
-            det_score -= 30
-            weak_bullets.append("Very few quantified achievements found. Add numbers, percentages, or metrics to at least 45% of bullets.")
-        elif quant_ratio < 0.45:
-            det_score -= 15
-            weak_bullets.append("Add more numbers or percentages to your experience bullets to show measurable impact.")
-            
-        llm_score = det_score
-        try:
-            system_prompt = (
-                "You are an expert resume coach. Analyze the bullet points from a resume.\n"
-                "Identify bullets that are vague, lack action verbs, or have zero impact.\n"
-                "Return a JSON object of this schema:\n"
-                "{\n"
-                "  \"score\": <number 0-100 representing content quality>,\n"
-                "  \"weakBullets\": [<string weak bullet points with suggestions>]\n"
-                "}\n"
-                "Return ONLY the valid JSON object. No explanation, no markdown."
-            )
-            response = self.client.chat.completions.create(
-                model="gemini-1.5-flash",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(bullets[:15])}
-                ],
-                temperature=0.1,
-                max_tokens=400
-            )
-            raw = response.choices[0].message.content.strip()
-            if raw.startswith("```json"): raw = raw[7:]
-            if raw.startswith("```"): raw = raw[3:]
-            if raw.endswith("```"): raw = raw[:-3]
-            raw = raw.strip()
-            
-            llm_data = json.loads(raw)
-            llm_score = llm_data.get("score", det_score)
-            weak_bullets.extend(llm_data.get("weakBullets", []))
-        except Exception as e:
-            logger.error("LLM content quality check failed: %s", e)
-            
-        score = int(det_score * 0.5 + llm_score * 0.5)
-        return max(0, score), weak_bullets[:5]
-
-    def _check_integrity(self, resume_text: str) -> tuple:
-        score = 100
-        flags = []
-        
-        hidden_prompts = ["ignore previous instructions", "system prompt", "you are now", "override instruction"]
-        for p in hidden_prompts:
-            if p in resume_text.lower():
-                score -= 40
-                flags.append(f"Hidden instructions or prompt override attempts detected: '{p}'")
-                
-        words = re.findall(r'\b[a-zA-Z]{3,20}\b', resume_text.lower())
-        word_counts = Counter(words)
-        for w, c in word_counts.items():
-            if c > 20:
-                if w not in {"and", "the", "for", "with", "this", "that", "from", "python", "flask", "react", "mysql", "java"}:
-                    score -= 10
-                    flags.append(f"Potential keyword stuffing: Word '{w}' appears {c} times.")
-                    break
-                    
-        return max(0, score), flags
-
     def analyze(self, resume_text: str, parsed_data: dict, target_job_description: str = None) -> dict:
+        # Build text description if not provided
         if not resume_text:
             lines = []
             personal = parsed_data.get("personalInfo", {}) or {}
@@ -557,107 +467,486 @@ class AtsCompatibilityAgent:
                 
             resume_text = "\n".join(lines)
 
-        resume_text = resume_text[:8000]
+        resume_text_lower = resume_text.lower()
+        model = get_embedding_model()
         
-        # 1. Run all sub-checks deterministically
-        formatting_score, formatting_issues = self._check_formatting(resume_text)
-        structure_score, structure_issues = self._check_structure(resume_text, parsed_data)
-        spelling_score, spelling_issues = self._check_spelling_and_grammar(resume_text, parsed_data)
-        repetition_score, repetition_issues = self._check_repetition(resume_text)
-        keywords_score, missing_keywords, matched_keywords = self._check_keywords(resume_text, parsed_data, target_job_description)
-        content_score, weak_bullets = self._check_content_quality(parsed_data)
-        integrity_score, flags = self._check_integrity(resume_text)
+        # 1. ATS Formatting (10%)
+        fmt_score, fmt_issues = self._check_formatting(resume_text)
         
-        # Count total issues to evaluate strictness penalty
-        total_issues_count = (
-            len(formatting_issues) +
-            len(structure_issues) +
-            len(spelling_issues) +
-            len(repetition_issues) +
-            len(missing_keywords) +
-            len(weak_bullets) +
-            len(flags)
-        )
+        # Candidate Experience Years and Degree details
+        cand_years = self._calculate_experience_years(parsed_data)
         
-        # Blend spelling, repetition, and bullet quality scores under "content" (Achievement Quality) for frontend display
-        blended_content_score = round(
-            (spelling_score * 0.15 + repetition_score * 0.10 + content_score * 0.15) / 0.40
-        )
+        # Extract candidate skills for matching
+        candidate_skills = list(set(str(s).lower().strip() for s in parsed_data.get("skills", []) if s))
         
-        # Calculate overall score based on the weighted components
+        # Extract projects and populate diagnostic variables early
+        parsed_projects = []
+        for key in ["projects", "Projects", "PROJECTS"]:
+            if key in parsed_data:
+                parsed_projects = parsed_data[key] or []
+                break
+                
+        proj_titles = []
+        all_project_techs = set()
+        proj_descriptions_bullets = []
+        
+        for proj in parsed_projects:
+            pname = proj.get("name") or proj.get("title") or ""
+            if pname:
+                proj_titles.append(pname)
+            pdesc = proj.get("description") or ""
+            if pdesc:
+                proj_descriptions_bullets.append(pdesc)
+            pbullets = proj.get("bullets") or proj.get("responsibilities") or []
+            if isinstance(pbullets, list):
+                proj_descriptions_bullets.extend([str(b) for b in pbullets if b])
+            elif isinstance(pbullets, str) and pbullets.strip():
+                proj_descriptions_bullets.append(pbullets.strip())
+            ptags = proj.get("techStack") or proj.get("tech_stack") or proj.get("technologies") or []
+            if isinstance(ptags, str):
+                ptags = [ptags]
+            for tag in ptags:
+                all_project_techs.update(self._extract_techs_from_text(str(tag)))
+            all_project_techs.update(self._extract_techs_from_text(pname))
+            all_project_techs.update(self._extract_techs_from_text(pdesc))
+            for bullet in pbullets:
+                all_project_techs.update(self._extract_techs_from_text(str(bullet)))
+                
+        jd_techs_all = set()
+        matched_techs = []
+        semantic_sim_score = 0.0
+        technology_overlap_score = 0.0
+        responsibility_overlap_score = 0.0
+        
+        # 2. Match calculations
+        if target_job_description and target_job_description.strip():
+            jd_req = self._extract_jd_requirements(target_job_description)
+            
+            # --- Keyword Match (35%) ---
+            target_keywords = list(set(k.lower().strip() for k in (jd_req.get("technologies", []) + jd_req.get("frameworks", [])) if k))
+            if not target_keywords:
+                # Add backup words from technology dictionary matching the JD text
+                jd_words = re.findall(r'\b[a-zA-Z]{3,18}\b', target_job_description.lower())
+                target_keywords = list(set(w for w in jd_words if w in TECH_DICT))
+                
+            matched_keywords = []
+            missing_keywords = []
+            
+            if target_keywords:
+                # Precompute embeddings for semantic keyword match
+                sim_matrix_kw = None
+                if model and candidate_skills:
+                    try:
+                        kw_embs = model.encode(target_keywords, convert_to_numpy=True)
+                        cand_embs = model.encode(candidate_skills, convert_to_numpy=True)
+                        
+                        kw_embs = kw_embs / (np.linalg.norm(kw_embs, axis=1, keepdims=True) + 1e-8)
+                        cand_embs = cand_embs / (np.linalg.norm(cand_embs, axis=1, keepdims=True) + 1e-8)
+                        
+                        sim_matrix_kw = np.dot(kw_embs, cand_embs.T)
+                    except Exception as e:
+                        logger.warning("Failed to encode keyword/skills embeddings: %s", e)
+                
+                for i, kw in enumerate(target_keywords):
+                    pattern = rf"\b{re.escape(kw)}\b"
+                    if re.search(pattern, resume_text_lower):
+                        matched_keywords.append(kw)
+                    elif sim_matrix_kw is not None and candidate_skills:
+                        max_sim = float(np.max(sim_matrix_kw[i]))
+                        if max_sim > 0.82:
+                            matched_keywords.append(kw)
+                        else:
+                            missing_keywords.append(kw)
+                    else:
+                        missing_keywords.append(kw)
+                keyword_match_score = int((len(matched_keywords) / len(target_keywords)) * 100) if target_keywords else 100
+            else:
+                keyword_match_score = 100
+
+            # --- Skills Match (25%) ---
+            jd_skills = list(set(s.lower().strip() for s in (jd_req.get("required_skills", []) + jd_req.get("preferred_skills", [])) if s))
+            matched_skills = []
+            missing_skills = []
+            
+            if jd_skills:
+                if candidate_skills and model:
+                    try:
+                        jd_embs = model.encode(jd_skills, convert_to_numpy=True)
+                        cand_embs = model.encode(candidate_skills, convert_to_numpy=True)
+                        
+                        jd_embs = jd_embs / (np.linalg.norm(jd_embs, axis=1, keepdims=True) + 1e-8)
+                        cand_embs = cand_embs / (np.linalg.norm(cand_embs, axis=1, keepdims=True) + 1e-8)
+                        
+                        sim_matrix_sk = np.dot(jd_embs, cand_embs.T)
+                        for i, s in enumerate(jd_skills):
+                            max_sim = float(np.max(sim_matrix_sk[i]))
+                            if s in candidate_skills or max_sim > 0.82:
+                                matched_skills.append(s)
+                            else:
+                                missing_skills.append(s)
+                    except Exception:
+                        for s in jd_skills:
+                            if any(s in cs or cs in s for cs in candidate_skills):
+                                matched_skills.append(s)
+                            else:
+                                missing_skills.append(s)
+                elif candidate_skills:
+                    # Embedding model unavailable (e.g. running on low-RAM host without
+                    # HF_SPACE_EMBEDDING_URL configured) -> fall back to substring matching
+                    # instead of marking every required skill as missing.
+                    for s in jd_skills:
+                        if any(s in cs or cs in s for cs in candidate_skills):
+                            matched_skills.append(s)
+                        else:
+                            missing_skills.append(s)
+                else:
+                    missing_skills = jd_skills[:]
+                skills_match_score = int((len(matched_skills) / len(jd_skills)) * 100) if jd_skills else 100
+            else:
+                skills_match_score = 100
+
+            # --- Experience Relevance (15%) ---
+            # Part A: Experience Years check
+            req_years = int(jd_req.get("min_experience_years", 0))
+            if req_years <= 0:
+                years_score = 100
+            else:
+                years_score = min(100.0, (cand_years / req_years) * 100.0)
+                
+            # Part B: Semantic alignment of experience bullets using SentenceTransformer embeddings
+            jd_responsibilities = [r.strip() for r in jd_req.get("responsibilities", []) if r.strip()]
+            if not jd_responsibilities and target_job_description:
+                # Fallback to lines of Job Description
+                jd_responsibilities = [line.strip() for line in target_job_description.split("\n") if line.strip() and len(line.strip()) > 35][:12]
+                
+            cand_bullets = []
+            for exp in parsed_data.get("experience", []):
+                bullets = exp.get("bullets", []) or exp.get("responsibilities", []) or []
+                if isinstance(bullets, list):
+                    cand_bullets.extend([b.strip() for b in bullets if b.strip()])
+                elif isinstance(bullets, str) and bullets.strip():
+                    cand_bullets.append(bullets.strip())
+                    
+            if not jd_responsibilities or not cand_bullets:
+                semantic_exp_score = 70.0
+                exp_details = "Default experience relevance profile applied (no responsibilities or candidate experience bullets found)."
+            else:
+                mean_sim, _ = compute_semantic_similarity(jd_responsibilities, cand_bullets)
+                # Map similarity [0.25, 0.75] -> [0.0, 100.0]
+                semantic_exp_score = min(100.0, max(0.0, (mean_sim - 0.25) / 0.5 * 100.0))
+                semantic_exp_score = round(semantic_exp_score)
+                exp_details = f"Experience bullets exhibit {round(mean_sim*100, 1)}% semantic similarity with JD responsibilities."
+                
+            experience_relevance_score = round(0.4 * years_score + 0.6 * semantic_exp_score)
+            
+            # --- Project Relevance (10%) ---
+
+            if not parsed_projects:
+                project_relevance_score = 0.0
+                technology_overlap_score = 0.0
+                responsibility_overlap_score = 0.0
+                semantic_sim_score = 0.0
+                proj_details = "No projects listed on candidate's resume."
+                matched_techs = []
+                jd_techs_all = []
+            else:
+                # 1. 60% Semantic Similarity: Cosine Similarity between combined project text and full JD text
+                proj_combined_parts = []
+                for proj in parsed_projects:
+                    pname = proj.get("name") or proj.get("title") or ""
+                    pdesc = proj.get("description") or ""
+                    ptags = ", ".join(str(t) for t in (proj.get("techStack") or proj.get("tech_stack") or proj.get("technologies") or []) if t)
+                    pbullets = " ".join(str(b) for b in (proj.get("bullets") or proj.get("responsibilities") or []) if b)
+                    proj_combined_parts.append(f"{pname} {pdesc} {ptags} {pbullets}")
+                combined_project_text = " ".join(proj_combined_parts).strip()
+                
+                if model and combined_project_text and target_job_description:
+                    try:
+                        proj_emb = model.encode([combined_project_text], convert_to_numpy=True)
+                        jd_emb = model.encode([target_job_description], convert_to_numpy=True)
+                        proj_emb = proj_emb / (np.linalg.norm(proj_emb, axis=1, keepdims=True) + 1e-8)
+                        jd_emb = jd_emb / (np.linalg.norm(jd_emb, axis=1, keepdims=True) + 1e-8)
+                        cos_sim = float(np.dot(proj_emb, jd_emb.T)[0][0])
+                        semantic_sim_score = min(100.0, max(0.0, (cos_sim - 0.2) / 0.45 * 100.0))
+                    except Exception as e:
+                        logger.error("Failed to compute combined project similarity: %s", e)
+                        semantic_sim_score = 50.0
+                        cos_sim = 0.5
+                else:
+                    semantic_sim_score = 50.0
+                    cos_sim = 0.5
+                    
+                # 2. 30% Technology Overlap
+                jd_techs_all = set(t.lower().strip() for t in (jd_req.get("technologies", []) + jd_req.get("frameworks", [])) if t)
+                if not jd_techs_all and target_job_description:
+                    jd_techs_all = self._extract_techs_from_text(target_job_description)
+                
+                matched_techs = []
+                for jd_t in jd_techs_all:
+                    matched = False
+                    for p_t in all_project_techs:
+                        if self._is_partial_match(jd_t, p_t):
+                            matched = True
+                            break
+                    if matched:
+                        matched_techs.append(jd_t)
+                
+                if not jd_techs_all:
+                    technology_overlap_score = 100.0
+                else:
+                    technology_overlap_score = (len(matched_techs) / len(jd_techs_all)) * 100.0
+                    
+                # 3. 10% Responsibility Overlap
+                jd_resps = jd_req.get("responsibilities", [])
+                if not jd_resps and target_job_description:
+                    jd_resps = [line.strip() for line in target_job_description.split("\n") if line.strip() and len(line.strip()) > 35][:12]
+                
+                if not jd_resps:
+                    responsibility_overlap_score = 100.0
+                elif not proj_descriptions_bullets:
+                    responsibility_overlap_score = 0.0
+                else:
+                    mean_sim_resp, _ = compute_semantic_similarity(jd_resps, proj_descriptions_bullets)
+                    responsibility_overlap_score = min(100.0, max(0.0, (mean_sim_resp - 0.15) / 0.5 * 100.0))
+                    
+                # Calculate Weighted Score
+                calculated_score = (
+                    0.60 * semantic_sim_score +
+                    0.30 * technology_overlap_score +
+                    0.10 * responsibility_overlap_score
+                )
+                
+                # Apply Completeness Points
+                completeness_points = 0
+                total_projects = len(parsed_projects)
+                for proj in parsed_projects:
+                    has_title = bool(proj.get("name") or proj.get("title"))
+                    has_desc = bool(proj.get("description"))
+                    has_tech = bool(proj.get("techStack") or proj.get("tech_stack") or proj.get("technologies"))
+                    proj_points = 0
+                    if has_title: proj_points += 10
+                    if has_desc: proj_points += 15
+                    if has_tech: proj_points += 10
+                    completeness_points += proj_points
+                completeness_score = min(100.0, (completeness_points / total_projects) * (100.0 / 35.0))
+                
+                # Fail-safe minimum
+                base_fail_safe = 30.0 + 0.10 * completeness_score
+                project_relevance_score = max(base_fail_safe, calculated_score)
+                project_relevance_score = round(project_relevance_score)
+                
+                proj_details = (
+                    f"Project relevance scored {round(project_relevance_score)}% "
+                    f"(60% semantic similarity: {round(semantic_sim_score, 1)}%, "
+                    f"30% tech overlap: {round(technology_overlap_score, 1)}%, "
+                    f"10% responsibility overlap: {round(responsibility_overlap_score, 1)}%)."
+                )
+
+            # --- Education Match (5%) ---
+            req_degree = jd_req.get("preferred_degree", "")
+            if not req_degree:
+                education_match_score = 100
+                edu_details = "No specific education requirements parsed from target job description."
+            else:
+                edu_list = parsed_data.get("education", []) or []
+                if not edu_list:
+                    education_match_score = 40
+                    edu_details = "No education history listed on candidate's resume."
+                else:
+                    max_cand_level = 0
+                    cand_degree_name = ""
+                    for edu in edu_list:
+                        level = self._get_degree_level(edu.get("degree", ""))
+                        if level > max_cand_level:
+                            max_cand_level = level
+                            cand_degree_name = edu.get("degree", "")
+                            
+                    target_level = self._get_degree_level(req_degree)
+                    if max_cand_level >= target_level:
+                        education_match_score = 100
+                        edu_details = f"Candidate degree ({cand_degree_name}) matches or exceeds requirement ({req_degree})."
+                    else:
+                        education_match_score = max(50, 100 - (target_level - max_cand_level) * 20)
+                        edu_details = f"Candidate degree ({cand_degree_name}) is lower than preferred degree ({req_degree})."
+
+        else:
+            # Fallback general metrics when no job description is provided
+            keyword_match_score = 80
+            matched_keywords = list(parsed_data.get("skills", []))[:8]
+            missing_keywords = []
+            
+            skills_count = len(parsed_data.get("skills", []))
+            skills_match_score = min(100, skills_count * 8)
+            matched_skills = list(parsed_data.get("skills", []))
+            missing_skills = []
+            
+            if cand_years >= 5: experience_relevance_score = 100
+            elif cand_years >= 2: experience_relevance_score = 85
+            else: experience_relevance_score = 70
+            semantic_exp_score = experience_relevance_score
+            exp_details = f"General evaluation based on {cand_years} years of experience."
+            req_years = 0
+            
+            proj_count = len(parsed_data.get("projects", []))
+            if proj_count >= 2: project_relevance_score = 95
+            elif proj_count == 1: project_relevance_score = 80
+            else: project_relevance_score = 40
+            proj_details = f"General evaluation based on {proj_count} listed projects."
+            
+            if parsed_data.get("education"):
+                education_match_score = 100
+                edu_details = "Education details present."
+            else:
+                education_match_score = 40
+                edu_details = "No education details listed."
+            req_degree = ""
+
+        # Compile strengths & weaknesses based on sub-scores
+        strengths = []
+        weaknesses = []
+
+        if keyword_match_score >= 80:
+            strengths.append("High alignment with Job Description technical keywords.")
+        else:
+            weaknesses.append("Low density of target Job Description technical keywords.")
+
+        if skills_match_score >= 85:
+            strengths.append("Declared skills list fully covers the required competencies.")
+        else:
+            weaknesses.append("Missing core skills requested in the job description.")
+
+        if experience_relevance_score >= 85:
+            strengths.append("Past job roles and descriptions are highly relevant to this position.")
+        else:
+            weaknesses.append("Past work experience lacks specific domain relevance for this role.")
+
+        if project_relevance_score >= 80:
+            strengths.append("Project portfolio highlights relevant technologies and capabilities.")
+        else:
+            weaknesses.append("Project descriptions do not explicitly showcase job-aligned tech stack.")
+
+        if education_match_score >= 90:
+            strengths.append("Academic qualifications meet target specifications.")
+        elif education_match_score < 70:
+            weaknesses.append("Degree level does not match the preferred education requirement.")
+
+        if fmt_score >= 90:
+            strengths.append("Excellent, clean formatting layout that parses easily.")
+        else:
+            weaknesses.append("Formatting layout warnings detected (long bullet points, symbols, columns).")
+
+        # Compile final calculated score
         overall_score = round(
-            formatting_score * 0.20 +
-            structure_score * 0.15 +
-            keywords_score * 0.20 +
-            blended_content_score * 0.40 +
-            integrity_score * 0.05
+            keyword_match_score * 0.35 +
+            skills_match_score * 0.25 +
+            experience_relevance_score * 0.15 +
+            project_relevance_score * 0.10 +
+            education_match_score * 0.05 +
+            fmt_score * 0.10
         )
-        
-        # Apply a mild overall penalty ONLY when the total issue count is high.
-        # This reflects that having many small issues degrades overall quality,
-        # but keeps individual sub-check progress bars clean and interpretable.
-        if total_issues_count >= 15:
-            overall_score = round(overall_score * 0.82)
-        elif total_issues_count >= 10:
-            overall_score = round(overall_score * 0.88)
-        elif total_issues_count >= 5:
-            overall_score = round(overall_score * 0.94)
-            
         overall_score = max(5, min(overall_score, 100))
-        
-        # Merge issues lists for Achievement Quality to display in frontend
-        blended_weak_bullets = []
-        if spelling_issues:
-            blended_weak_bullets.extend(spelling_issues)
-        if repetition_issues:
-            blended_weak_bullets.extend(repetition_issues)
-        if weak_bullets:
-            blended_weak_bullets.extend(weak_bullets)
-            
-        # Compile dynamic top suggestions
+
+        # Generate top coach suggestions
         top_suggestions = []
-        if spelling_issues:
-            top_suggestions.append(spelling_issues[0])
-        if repetition_issues:
-            top_suggestions.append(repetition_issues[0])
-        if formatting_issues:
-            top_suggestions.append(formatting_issues[0])
-        if len(missing_keywords) > 0:
-            top_suggestions.append(f"Add critical missing keywords: {', '.join(missing_keywords[:3])}")
-        if weak_bullets:
-            top_suggestions.append(weak_bullets[0])
-        if structure_issues:
-            top_suggestions.append(structure_issues[0])
+        if missing_keywords:
+            top_suggestions.append(f"Incorporate target keywords: {', '.join(missing_keywords[:3])}")
+        if missing_skills:
+            top_suggestions.append(f"Add missing required skills: {', '.join(missing_skills[:3])}")
+        if experience_relevance_score < 80:
+            top_suggestions.append("Quantify experience impact statements to match JD responsibilities.")
+        if project_relevance_score < 80:
+            top_suggestions.append("Tailor projects to highlight frameworks mentioned in the Job Description.")
+        if fmt_score < 90:
+            top_suggestions.append("Use standard fonts, clean delimiters, and shorten long bullet points.")
             
         if not top_suggestions:
-            top_suggestions.append("Your resume is well optimized! Try tailoring it to another job description to further match keywords.")
+            top_suggestions.append("Your resume is well optimized! Tailor it to another job description to further match keywords.")
 
+        # Local spelling & grammar check for achievements
+        spelling_and_grammar_score, spelling_and_grammar_issues = self._check_spelling_and_grammar(resume_text, parsed_data)
+
+        # Generate explanations explaining every point awarded or deducted
+        explanations = [
+            f"Keyword Match (35.0 pts max): Awarded {round(keyword_match_score * 0.35, 2)} pts ({keyword_match_score}% matching density). Detected {len(matched_keywords)} target keywords. Deducted {round(35.0 - (keyword_match_score * 0.35), 2)} pts for {len(missing_keywords)} missing keywords.",
+            f"Skills Match (25.0 pts max): Awarded {round(skills_match_score * 0.25, 2)} pts ({skills_match_score}% competency matching). Detected {len(matched_skills)} core skills. Deducted {round(25.0 - (skills_match_score * 0.25), 2)} pts for {len(missing_skills)} missing skills.",
+            f"Experience Relevance (15.0 pts max): Awarded {round(experience_relevance_score * 0.15, 2)} pts ({experience_relevance_score}% relevance). Experience: {cand_years} yrs vs. target {req_years} yrs. Semantic alignment similarity is {round(semantic_exp_score)}%.",
+            f"Project Relevance (10.0 pts max): Awarded {round(project_relevance_score * 0.10, 2)} pts ({project_relevance_score}% score). Portfolio shows {len(parsed_data.get('projects', []))} project(s). {proj_details}",
+            f"Education Match (5.0 pts max): Awarded {round(education_match_score * 0.05, 2)} pts ({education_match_score}% score). {edu_details}",
+            f"ATS Formatting (10.0 pts max): Awarded {round(fmt_score * 0.10, 2)} pts ({fmt_score}% formatting layout score). Deducted {round(10.0 - (fmt_score * 0.10), 2)} pts due to formatting warnings: {'; '.join(fmt_issues) or 'None'}."
+        ]
+
+        # Build full report
         report = {
             "overallScore": overall_score,
+            "strengths": strengths[:4],
+            "weaknesses": weaknesses[:4],
+            "topSuggestions": top_suggestions[:4],
+            "computedAt": datetime.now(timezone.utc).isoformat() + "Z",
+            "explanations": explanations,
+            
+            # Upgraded detailed sub-scores
+            "detailed_breakdown": {
+                "keyword_match": {
+                    "score": keyword_match_score,
+                    "matched": matched_keywords[:15],
+                    "missing": missing_keywords[:12]
+                },
+                "skills_match": {
+                    "score": skills_match_score,
+                    "matched": matched_skills[:15],
+                    "missing": missing_skills[:12]
+                },
+                "experience_relevance": {
+                    "score": experience_relevance_score,
+                    "details": exp_details,
+                    "years": cand_years,
+                    "required_years": req_years
+                },
+                "project_relevance": {
+                    "score": project_relevance_score,
+                    "projects_found": proj_titles,
+                    "project_keywords": sorted(list(all_project_techs)),
+                    "jd_keywords": sorted(list(jd_techs_all)),
+                    "matched_keywords": sorted(list(matched_techs)),
+                    "semantic_similarity": round(semantic_sim_score, 1),
+                    "technology_overlap": round(technology_overlap_score, 1),
+                    "responsibility_overlap": round(responsibility_overlap_score, 1),
+                    "reason": proj_details
+                },
+                "education_match": {
+                    "score": education_match_score,
+                    "details": edu_details
+                },
+                "ats_formatting": {
+                    "score": fmt_score,
+                    "issues": fmt_issues
+                },
+                "explanations": explanations
+            },
+            
+            # Map legacy keys to prevent frontend crashes
             "breakdown": {
                 "formatting": {
-                    "score": formatting_score,
-                    "issues": formatting_issues
+                    "score": fmt_score,
+                    "issues": fmt_issues
                 },
                 "structure": {
-                    "score": structure_score,
-                    "issues": structure_issues
+                    "score": education_match_score,
+                    "issues": [edu_details] if education_match_score < 100 else []
                 },
                 "keywords": {
-                    "score": keywords_score,
-                    "missingKeywords": missing_keywords,
-                    "matchedKeywords": matched_keywords
+                    "score": keyword_match_score,
+                    "missingKeywords": missing_keywords[:12],
+                    "matchedKeywords": matched_keywords[:15]
                 },
                 "content": {
-                    "score": blended_content_score,
-                    "weakBullets": blended_weak_bullets
+                    "score": round((experience_relevance_score * 0.6) + (project_relevance_score * 0.4)),
+                    "weakBullets": spelling_and_grammar_issues
                 },
                 "integrity": {
-                    "score": integrity_score,
-                    "flags": flags
+                    "score": skills_match_score,
+                    "flags": []
                 }
-            },
-            "topSuggestions": top_suggestions[:4],
-            "computedAt": datetime.now(timezone.utc).isoformat() + "Z"
+            }
         }
         return report
